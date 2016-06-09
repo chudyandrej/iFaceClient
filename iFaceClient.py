@@ -1,22 +1,29 @@
 import cv2
 import sys
 import time
+import base64
+import requests
 
-# The two main parameters that affect movement detection sensitivity
-# are BLUR_SIZE and NOISE_CUTOFF. Both have little direct effect on
-# CPU usage. In theory a smaller BLUR_SIZE should use less CPU, but
-# for the range of values that are effective the difference is
-# negligible. The default values are effective with on most light
-# conditions with the cameras I have tested. At these levels the
-# detector can easily trigger on eye blinks, yet not trigger if the
-# subject remains still without blinking. These levels will likely be
-# useless outdoors.
+
+
+
+
 BLUR_SIZE = 3
 NOISE_CUTOFF = 20
 # Ah, but the third main parameter that affects movement detection
 # sensitivity is the time between frames. I like about 10 frames per
 # second. Even 4 FPS is fine.
 #FRAMES_PER_SECOND = 10
+
+def send_fame_to_analysis(frame):
+
+	img_str = cv2.imencode('.jpg', frame)[1].tostring()
+	encoded_img = base64.b64encode(img_str)
+	req = requests.post (url="http://192.168.1.121:8080/recognise", data="image="+encoded_img+"&camraID=1")
+	print(req.status_code, req.reason)
+	print req.text
+
+
 
 cam = cv2.VideoCapture(0)
 
@@ -29,9 +36,9 @@ cv2.namedWindow(window_name, cv2.CV_WINDOW_AUTOSIZE)
 
 # Stabilize the detector by letting the camera warm up and
 # seeding the first frames.
-frame_now = cam.read()[1]
-frame_now = cam.read()[1]
-frame_now = cv2.cvtColor(frame_now, cv2.COLOR_RGB2GRAY)
+original_frame = cam.read()[1]
+original_frame = cam.read()[1]
+frame_now = cv2.cvtColor(original_frame, cv2.COLOR_RGB2GRAY)
 frame_now = cv2.blur(frame_now, (BLUR_SIZE, BLUR_SIZE))
 frame_prior = frame_now
 
@@ -42,21 +49,14 @@ while True:
 	frame_delta = cv2.threshold(frame_delta, NOISE_CUTOFF, 255, 3)[1]
 	delta_count = cv2.countNonZero(frame_delta)
 	print delta_count
-	# Visual detection statistics output.
-	# Normalize improves brightness and contrast.
-	# Mirror view makes self display more intuitive.
-
-
-	# Stdout output.
-	# Only output when there is new movement or when movement stops.
-	# Time codes are in epoch time format.
+	send_fame_to_analysis(original_frame)
 
 
 	# Advance the frames.
 	frame_prior = frame_now
-	frame_now = cam.read()[1]
-	cv2.imshow("Original", frame_now)
-	frame_now = cv2.cvtColor(frame_now, cv2.COLOR_RGB2GRAY)
+	original_frame = cam.read()[1]
+	cv2.imshow("Original", original_frame)
+	frame_now = cv2.cvtColor(original_frame, cv2.COLOR_RGB2GRAY)
 	frame_now = cv2.blur(frame_now, (BLUR_SIZE, BLUR_SIZE))
 
     # Wait up to 10ms for a key press. Quit if the key is either ESC or 'q'.
