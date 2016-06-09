@@ -5,7 +5,9 @@ import base64
 import requests
 import thread
 import numpy as np
-
+from Queue import Queue
+from threading import Thread
+from time import sleep
 
 
 #SETTINGS 
@@ -13,19 +15,21 @@ BLUR_SIZE = 3
 NOISE_CUTOFF = 20		# Set sensitivity between new frame and sample 
 WINDOW_NAME = "Camera"
 FRAMES_TO_LEARN_BG = 30
-
+frames = Queue(10) 
 
 #Function for send frame to iFace server
-def send_fame_to_analysis(frame):
-	img_str = cv2.imencode('.jpg', frame)[1].tostring()
-	encoded_img = base64.encodestring(img_str)
-	
-	encoded_img = encoded_img.replace('+', '-')
-	encoded_img = encoded_img.replace('/', '_')
-	encoded_img = encoded_img.replace('.', '.')
+def send_fame_to_analysis():
+	while(True):
+		frame = frames.get(block=True)
+		img_str = cv2.imencode('.jpg', frame)[1].tostring()
+		encoded_img = base64.encodestring(img_str)
+		
+		encoded_img = encoded_img.replace('+', '-')
+		encoded_img = encoded_img.replace('/', '_')
+		encoded_img = encoded_img.replace('.', '.')
 
-	req = requests.post (url="http://192.168.1.157:8080/recognise", data="image="+encoded_img+"&camraID=1")
-	print req.text
+		req = requests.post (url="http://192.168.1.121:8080/recognise", data="image="+encoded_img+"&camraID=1")
+		print req.text
 
 # Main function of program
 def main():
@@ -45,6 +49,8 @@ def main():
 	frame_now = cv2.blur(frame_now, (BLUR_SIZE, BLUR_SIZE))
 	frame_prior = frame_now
 	counter_frame = 1
+	thread = Thread(target = send_fame_to_analysis)
+ 	thread.start()
 	while True:
 
 		frame_delta = cv2.absdiff(frame_prior, frame_now)
@@ -52,9 +58,12 @@ def main():
 		delta_count = cv2.countNonZero(frame_delta)
 		##cv2.imshow("AAA", frame_delta)
 		counter_frame += 1
-		print delta_count
+		#print delta_count
+		print frames.qsize()
+		sleep(0.1)
 		if delta_count > 1500:
-			thread.start_new_thread(send_fame_to_analysis,(original_frame,))
+			if not frames.full():
+				frames.put(original_frame)
 
 		if counter_frame > FRAMES_TO_LEARN_BG:
 			frame_prior = frame_now
@@ -68,10 +77,11 @@ def main():
 	    # Wait up to 1ms for a key press. Quit if the key is either ESC or 'q'.
 		key = cv2.waitKey(1)
 		if key == 0x1b or key == ord('q'):
+			thread.join()
 			cv2.destroyWindow(WINDOW_NAME)
 			break
 
-
+	
 
 if __name__ == "__main__":
     main()
