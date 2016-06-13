@@ -9,7 +9,7 @@ from Queue import Queue
 from threading import Thread
 from time import sleep
 import json
-from atomiclong import AtomicLong
+
 
 
 #SETTINGS
@@ -25,7 +25,7 @@ BLUR_SIZE = 3
 NOISE_CUTOFF = 20		# Set sensitivity between new frame and sample
 
 #Global variables
-thread_counter = AtomicLong(0)
+thread_counter=0
 espeak = True
 
 
@@ -49,8 +49,8 @@ def send_fame_to_iFaceSERVER(frame):
 	global thread_counter
 	thread_counter += 1
 	encoded_img = frame_to_imgB64(frame)
-	req = requests.post (url=URL_server, data="image="+encoded_img+"&camraID=1")
-	print req.text
+	#req = requests.post (url=URL_server, data="image="+encoded_img+"&camraID=1")
+	#print req.text
 	print "posielam"
 	#if espeak:
 #		voice_synthesizer(req.text)
@@ -88,18 +88,22 @@ def main():
 	while True:
 		frame = cam.read()[1]
 		cv2.imshow(WINDOW_NAME, frame)
-		frame = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
-		frame = cv2.blur(frame, (BLUR_SIZE, BLUR_SIZE))
-		counter_frame += 1
+		frame_gray = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
+		blury = cv2.Laplacian(frame_gray, cv2.CV_64F).var()
+		if blury > 150:
+			frame_blur_gray = cv2.blur(frame_gray, (BLUR_SIZE, BLUR_SIZE))
+			counter_frame += 1
 
-		if scene_change(frame_sample,frame) > 3000:
-			thread.start_new_thread(send_fame_to_iFaceSERVER,(frame,))
+			if scene_change(frame_sample,frame_blur_gray) > SENSITIVITY_MOTION_TRIGGER:
+				thread.start_new_thread(send_fame_to_iFaceSERVER,(frame,))
 
-		if counter_frame > FRAMES_TO_LEARN_BG:
-			frame_sample = frame
-			counter_frame = 0
+			if counter_frame > FRAMES_TO_LEARN_BG:
+				frame_sample = frame_blur_gray
+				counter_frame = 0
 
-		print thread_counter.value
+			print thread_counter
+		else:
+			print "Skip to blurry !!!"
 	    # Wait up to 1ms for a key press. Quit if the key is either ESC or 'q'.
 		if cv2.waitKey(1) & 0xFF == ord('q'):
 
