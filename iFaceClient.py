@@ -32,7 +32,7 @@ def click_and_crop(event, x, y, flags, param):
 	if config_mode and event == cv2.EVENT_LBUTTONDOWN:
 		cliced = True
 		point1 = (x,y)
-		point2 = (x,y)
+		point2 = (x + 10,y + 10)
 
 	if config_mode and event == cv2.EVENT_MOUSEMOVE and cliced:
 		point2 = (x,y)
@@ -52,7 +52,7 @@ def main():
 	if "off-espeak" in sys.argv:
 		espeak = False
 	#Open video capture arg -> number (camera USB) / path to video / URL
-	cam = cv2.VideoCapture(0)
+	cam = cv2.VideoCapture("rtsp://admin:123456@192.168.1.103:554/1")
 
 	#Set size of video capture
 	#cam.set(3, 720)
@@ -85,7 +85,7 @@ def main():
 
 		counter_frame += 1
 
-		if scene_change(frame_sample[point1[1]:point2[1], point1[0]:point2[0]],frame_blur_gray[point1[1]:point2[1], point1[0]:point2[0]]) > SENSITIVITY_MOTION_TRIGGER:
+		if not cliced and  scene_change(frame_sample[point1[1]:point2[1], point1[0]:point2[0]],frame_blur_gray[point1[1]:point2[1], point1[0]:point2[0]]) > SENSITIVITY_MOTION_TRIGGER:
 			thread.start_new_thread(send_fame_to_iFaceSERVER,(frame,frame_gray))
 
 		if counter_frame > FRAMES_TO_LEARN_BG:
