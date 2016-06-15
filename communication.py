@@ -4,6 +4,7 @@ import requests
 import cv2
 
 thread_counter = 0
+URL_server = "http://192.168.1.121:8080/recognise"
 
 #Function for send frame to iFace server
 def send_fame_to_iFaceSERVER(frame, gray_frame):
