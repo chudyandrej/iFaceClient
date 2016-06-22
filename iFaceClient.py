@@ -1,101 +1,77 @@
-#!/usr/bin/python
-
 import cv2
-import thread
-import numpy as np
 import sys
-import math
-from threading import Thread
-from communication import send_fame_to_iFaceSERVER, thread_counter
-from motion_trigger import moutionTrigger
+import thread
+import concurrent.futures
+import time
+from communication import send_fame_to_iFaceSERVER
 
-#SETTINGS
+def cutFrame(frame, p1, p2):
 
-WINDOW_NAME = "Camera"
-FRAMES_TO_LEARN_BG = 30
-SENSITIVITY_MOTION_TRIGGER = 3000
+    increaseX = p2[0] *0.3 
+    increaseY = p2[1] *0.3
+    rows = len(frame)
+    cols = len (frame[1])
+    a = int(p1[1]-increaseY) if int(p1[1]-increaseY) >= 0 else 0  
+    b = int(p2[1]+increaseY) if int(p2[1]+increaseY) <= rows else rows  
+    c = int(p1[0]-increaseX) if int(p1[0]-increaseX) >= 0 else 0  
+    d = int(p2[0]+ increaseX) if int(p2[0]+ increaseX)  <= cols else cols  
 
-#Atributes of program (extended)
-BLUR_SIZE = 3
-NOISE_CUTOFF = 20		# Set sensitivity between new frame and sample
-
-#Global variables
-espeak = True
-config_mode = False
-point1 = ()
-point2 = ()
-cliced = False
-trigger = None
+    return frame[a:b,c:d]
 
 
-def get_size_capture(cap):
-	frame = cap.read()[1]
-	frame = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
-	w, h = frame.shape
-	print "Resolution", w, " x ", h
-	return (h,w)
+#def rotate(gray, deg):
+    
+ #   gray = cv2.cvtColor(gray, cv2.COLOR_BGR2GRAY)
+ #   rows,cols = gray.shape
+ #   M = cv2.getRotationMatrix2D((cols/2,rows/2),deg,1)
+ #   rotat_gray = cv2.warpAffine(gray,M,(cols,rows))
+ #   #cv2.imshow('rot', rotat_gray) 
+    #return rotat_gray
 
-def click_and_crop(event, x, y, flags, param):
-	# grab references to the global variables
-	global point1, point2,cliced
-	if config_mode and event == cv2.EVENT_LBUTTONDOWN:
-		cliced = True
-		point1 = (x,y)
-		point2 = (x + 10,y + 10)
+def faceDetect(gray, deg):
+  #  rotat_gray = rotate(gray, deg)
+    rotat_gray = gray
+    faces = faceCascade.detectMultiScale(
+        rotat_gray,
+        scaleFactor=1.1,
+        minNeighbors=2,
+        minSize=(50, 50),
+        maxSize=(120,120)
+    )
+    return faces
 
-	if config_mode and event == cv2.EVENT_MOUSEMOVE and cliced:
-		point2 = (x,y)
+faceCascade = cv2.CascadeClassifier("haarcascade_frontalface_alt2.xml")
+video_capture = cv2.VideoCapture("rtsp://admin:Admin12345@192.168.1.106/jpeg/ch2/sub/av_stream")
 
-	if config_mode and event == cv2.EVENT_LBUTTONUP:
-		cliced = False
-		point2 = (x,y)
-		trigger.make_sample(point1, point2)
+window = ()
+prev = time.time()
+while True:
+    # Capture frame-by-frame
+    ret, frame = video_capture.read()
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    faces = []
 
+   # for angle in range(-20,20,10):
+    faces.extend(faceDetect(gray, 0))
 
+    for (x, y, w, h) in faces:
+        p1 = (x,y)
+        p2 = (x+w,y+h)
+        window = cutFrame(frame, p1, p2)
+        thread.start_new_thread(send_fame_to_iFaceSERVER,(window,))
+        #cv2.rectangle(frame, p1, p2, (0, 255, 0), 2)
+        cv2.imshow('win', window)
 
-# Main function of program
-def main():
+    # Display the resulting frame
+    cv2.imshow('Video', frame)
 
-	global espeak, point1, point2, config_mode
-	if "off-espeak" in sys.argv:
-		espeak = False
-	#Open video capture arg -> number (camera USB) / path to video / URL
-	cam = cv2.VideoCapture(0)
+    # FPS
+    #print 1.0 /(time.time()-prev) 
+    #prev = time.time()
 
-	point1 = (0, 0)
-	point2 = get_size_capture(cam)
+    if cv2.waitKey(1) & 0xFF == ord('q'):
+        break
 
-	cv2.namedWindow(WINDOW_NAME, cv2.WINDOW_AUTOSIZE)
-	cv2.setMouseCallback(WINDOW_NAME, click_and_crop)
-
-	global trigger
-	trigger = moutionTrigger(cam, point1, point2)
-
-
-	while True:
-		frame = cam.read()[1]
-		frame_gray = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
-		show_frame = frame.copy()
-
-		if config_mode:
-			cv2.rectangle(show_frame, point1, point2, (0, 255, 0), 2)
-			#cv2.putText(show_frame,'Configure mode',(int(w-(w*0.02)),50),  cv2.FONT_HERSHEY_SIMPLEX, 2,(255,0,0),2,cv2.LINE_AA)
-		cv2.imshow(WINDOW_NAME, show_frame)
-
-		if not cliced and  trigger.calculate_change(frame_gray) > SENSITIVITY_MOTION_TRIGGER:
-			thread.start_new_thread(send_fame_to_iFaceSERVER,(frame,frame_gray))
-
-		
-		print thread_coungit
-
-	    # Wait up to 1ms for a key press. Quit if the key is either ESC or 'q'.
-		key = cv2.waitKey(1) & 0xFF
-		if key == ord("q"):
-			cv2.destroyWindow(WINDOW_NAME)
-			break
-		elif key == ord("c"):
-			config_mode = not config_mode
-
-
-if __name__ == "__main__":
-    main()
+# When everything is done, release the capture
+video_capture.release()
+cv2.destroyAllWindows()
