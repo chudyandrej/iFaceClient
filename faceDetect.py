@@ -3,16 +3,23 @@ import sys
 import thread
 import concurrent.futures
 import time
+import datetime
 import os.path
+
 from communication import send_fame_to_iFaceSERVER,getCounterThreads,isTimeout
 
 
 
-URL_IPCAMERA = "rtsp://admin:Admin12345@192.168.1.106/jpeg/ch2/sub/av_stream"
-PATH_HAARCASCADE = "./haarcascade_frontalface_alt2.xml"
-MIN_SIZE_FACE = 50      #Distance from camera  (Big influence to performace)
+
+LAST_RECORD_WATCHDOG = None
+WATCHDOG_NAME = None
+MIN_SIZE_FACE = 60      #Distance from camera  (Big influence to performace)
 MAX_SIZE_FACE = 250     #Distance from camera  (Big influence to performace)
-faceCascade = None
+
+
+
+
+#Global variables
 
 
 class Bcolors:
@@ -48,7 +55,7 @@ def cutFrame(frame, p1, p2):
 
 
 
-def faceDetect(gray, deg):
+def faceDetect(faceCascade, gray, deg):
   #  rotat_gray = rotate(gray, deg)
     rotat_gray = gray
     faces = faceCascade.detectMultiScale(
@@ -60,31 +67,61 @@ def faceDetect(gray, deg):
     )
     return faces
 
+def updateWatchDogFile():
+    global LAST_RECORD_WATCHDOG
+    if (datetime.datetime.now() - LAST_RECORD_WATCHDOG) >= datetime.timedelta(0, 40, 0):
+        LAST_RECORD_WATCHDOG= datetime.datetime.now()
+        fo = open(WATCHDOG_NAME, "wb")
+        fo.write( "modify");
+        fo.close()
 
-def runFaceDetect():
-    global faceCascade
-    if os.path.exists(PATH_HAARCASCADE):
-        faceCascade = cv2.CascadeClassifier(PATH_HAARCASCADE)
-    else:
-        print Bcolors.FAIL + "Error: Haar cascade not found!" + bcolors.ENDC
-        sys.exit(1) 
 
-    video_capture = cv2.VideoCapture(URL_IPCAMERA)
+def runFaceDetect(file_name):
 
+###### init values ######
+    url_ipcamera = "rtsp://admin:Admin12345@192.168.1.106/jpeg/ch2/sub/av_stream"
+    path_haarcascade = "./haarcascade_frontalface_alt2.xml"
     window = ()
     prev = time.time()
+#########################---------------------------------------
+
+##### init watchdog #####
+    global LAST_RECORD_WATCHDOG, WATCHDOG_NAME
+    WATCHDOG_NAME = file_name
+    LAST_RECORD_WATCHDOG= datetime.datetime.now()
+    fo = open(WATCHDOG_NAME, "wb")
+    fo.write( "modify");
+    fo.close()
+#########################---------------------------------------
+
+## init camera capture ##
+    video_capture = cv2.VideoCapture(url_ipcamera)
+#########################---------------------------------------
+
+## load face cascade ###
+    if os.path.exists(path_haarcascade):
+        faceCascade = cv2.CascadeClassifier(path_haarcascade)
+    else:
+        print Bcolors.FAIL + "Error: Haar cascade not found!" + bcolors.ENDC
+        sys.exit(1)
+#########################---------------------------------------
      
     while True:
-        # Capture frame-by-frame
-        ret, frame = video_capture.read()
+       
+        updateWatchDogFile()
+
+        ret, frame = video_capture.read()   #There program will be freez when camera will be disconect.
         if not  ret:
             print Bcolors.FAIL + "Error: Read fram from capture unsuccessful!" + Bcolors.ENDC
             print Bcolors.OKBLUE + "Recommend: Check connection of IP camera (ip addres, network)" + Bcolors.ENDC
-            sys.exit(1)
+            time.sleep(1)
+            video_capture = cv2.VideoCapture(URL_IPCAMERA)
+            continue
+        
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         
        
-        faces = faceDetect(gray, 0)
+        faces = faceDetect(faceCascade, gray, 0)
         for (x, y, w, h) in faces:
             p1 = (x,y)
             p2 = (x+w,y+h)
@@ -105,3 +142,4 @@ def runFaceDetect():
     # When everything is done, release the capture
     video_capture.release()
     cv2.destroyAllWindows()
+

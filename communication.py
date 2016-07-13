@@ -12,10 +12,9 @@ from gui import showNewPerson, showDefault
 apis_logo = ()
 threadCount = 0
 coun = 0
-URL_server = "http://192.168.1.223:8080/recognise"
+URL_server = "http://192.168.1.157:8080/recognise"
 timeout = False
 lock = Lock()
-
 
 class Bcolors:
     HEADER = '\033[95m'
@@ -33,8 +32,6 @@ class Bcolors:
 def send_fame_to_iFaceSERVER(frame):
     global threadCount, timeout, lock
     threadCount+=1
-    gray_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    #Blury detection
    
     encoded_img = code_B64(frame)
     req = send_request(encoded_img)
@@ -48,7 +45,7 @@ def send_fame_to_iFaceSERVER(frame):
                 if lock.acquire(False) == True:
                     timeout = True
                     showNewPerson(decode_B64(parsed_json),parsed_json["name" + str(parsed_json["userId"])],parsed_json["enabled" + str(parsed_json["userId"])])
-                    print voice_synthesizer(parsed_json)
+                    voice_synthesizer(parsed_json)
                     showDefault()
                     timeout = False
                     lock.release()
@@ -57,8 +54,6 @@ def send_fame_to_iFaceSERVER(frame):
         else:
             print Bcolors.WARNING + "Face not detected " + Bcolors.ENDC
 
-    else:
-        print "Skiped. To blurry !!!"
     threadCount-=1
 
 def code_B64(frame):
@@ -77,6 +72,7 @@ def decode_B64(parsed_json):
     encoded_img = encoded_img.replace('_', '/')
     encoded_img = encoded_img.replace('.', '=')
     decode_img = base64.decodestring(encoded_img)
+    
     return decode_img
    
 
@@ -85,10 +81,8 @@ def voice_synthesizer(parsed_json):
     print name
     command = "espeak -v sk --stdout '%s' | aplay" % (name)
     os.system(command.encode('UTF-8'))
-    time.sleep(6)
-    return  "end!!!!!!!!!!!!!"
-
-
+    time.sleep(4)
+    
 def send_request(encoded_img):
     try:    
         return requests.post (url=URL_server, data="image="+encoded_img+"&camraID=1&getUserInfo=1", timeout=4)

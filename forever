@@ -1,0 +1,33 @@
+ 
+
+function ctrl_c() {
+    kill $PID
+    exit
+}
+
+SHERE_FILE_NAME=watchdogFILE
+python iFaceClient.py $SHERE_FILE_NAME  &
+
+trap ctrl_c INT
+PID=`pgrep -x python`
+
+while true; do
+    FIRST_MOD_CHACK=`date -r $SHERE_FILE_NAME`
+    sleep 40
+    SECOND_MOD_CHACK=`date -r $SHERE_FILE_NAME`
+    
+    if [ "$FIRST_MOD_CHACK" == "$SECOND_MOD_CHACK" ]
+    then
+        echo "Reseting program ..."
+        kill $PID
+        python iFaceClient.py $SHERE_FILE_NAME  &
+        PID=`pgrep -x python`
+    else
+        echo "OK"
+    fi
+
+
+done 
+
+
+
