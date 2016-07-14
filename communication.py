@@ -96,12 +96,3 @@ def getCounterThreads():
 def isTimeout():
     return timeout
 
-
-
-
-
-
-
-
-
-

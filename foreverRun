@@ -1,32 +1,44 @@
- 
-
+#!/bin/bash
 function ctrl_c() {
     kill $PID
+    rm $SHERE_FILE_NAME
     exit
 }
+#settings
+SHERE_FILE_NAME="./watchdogFILE"
+WAIT_BETWEEN_CHECK_FILE=40
 
-SHERE_FILE_NAME=watchdogFILE
+
+#creat shere file
+if [ ! -f $SHERE_FILE_NAME ];
+then
+    touch $SHERE_FILE_NAME
+fi
+
+#start program
 python iFaceClient.py $SHERE_FILE_NAME  &
 
+#catch ctrl + C
 trap ctrl_c INT
+
+#Find PID of program
 PID=`pgrep -x python`
 
+#Endless forever loop
 while true; do
+    #Chack timestamp of last change
     FIRST_MOD_CHACK=`date -r $SHERE_FILE_NAME`
-    sleep 40
+    sleep $WAIT_BETWEEN_CHECK_FILE
     SECOND_MOD_CHACK=`date -r $SHERE_FILE_NAME`
     
+    #if first chcek is the same as second
     if [ "$FIRST_MOD_CHACK" == "$SECOND_MOD_CHACK" ]
     then
         echo "Reseting program ..."
         kill $PID
         python iFaceClient.py $SHERE_FILE_NAME  &
         PID=`pgrep -x python`
-    else
-        echo "OK"
     fi
-
-
 done 
 
 
