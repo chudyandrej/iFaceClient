@@ -37,6 +37,8 @@ nameLabel = None
 alertLabel = None
 okLabel = None
 
+config = False
+
 
 def runGui():
 	global nameLabel, personLabel ,unknown_person, actual_person, mainCanvas,approved,rejected, ok, no
@@ -65,12 +67,16 @@ def runGui():
 	nameLabel = mainCanvas.create_image(x_posImage,y_posImage, image=actual_person)
 
 	mainCanvas.bind_all('<q>', quit) 
+	mainCanvas.bind_all('<s>', settings) 
 	root.mainloop()
   
 def quit(event):
-	
 	root.destroy()
 	os._exit(0)
+
+def settings(event):
+	global  config
+	config = not config
 
 def showNewPerson(photo,name, permition):
 	global nameLabel, personLabel, actual_person, alertLabel, okLabel
@@ -108,6 +114,11 @@ def showDefault():
 	personLabel = mainCanvas.create_image(x_posImage,y_posImage, image=unknown_person)
 	mainCanvas.delete(nameLabel)
 	
+def getConfig():
+	return config 
+def offConfig():
+	global config
+	config = False
 
 
 		

@@ -5,17 +5,29 @@ import cv2
 import time
 import os
 from threading import Lock
-import numpy as np
+
 from gui import showNewPerson, showDefault
 
+#-------------------------------------------------------
+#                       Settings
+#-------------------------------------------------------
+URL_server_recognise = "http://192.168.1.157:8080/recognise"
+URL_server_check = "http://192.168.1.157:8080/check"
+TIMEOUT_BETWEEN_DETECTIONS = 4
+TIMEOUT_TO_SEND_REQUEST = 4
 
-apis_logo = ()
-threadCount = 0
-coun = 0
-URL_server = "http://192.168.1.157:8080/recognise"
+########################################################
+
+#-------------------------------------------------------
+#                    Global variables
+#-------------------------------------------------------
 timeout = False
 lock = Lock()
+threadCount = 0
+snapingRun = False
+########################################################
 
+#Color output
 class Bcolors:
     HEADER = '\033[95m'
     OKBLUE = '\033[94m'
@@ -26,66 +38,112 @@ class Bcolors:
     BOLD = '\033[1m'
     UNDERLINE = '\033[4m'
 
-
-
 #Function for send frame to iFace server
-def send_fame_to_iFaceSERVER(frame):
+def send_fame_to_iFaceSERVER(person):
     global threadCount, timeout, lock
+    #Counter of threads
     threadCount+=1
-   
+    #get cut window frame and code to b64
+    frame = person.getWindow()
     encoded_img = code_B64(frame)
-    req = send_request(encoded_img)
-    
+    #send request
+    req = send_request(URL_server_recognise,encoded_img)
+
+    #If server not responding
     if not req == 404:
+        #parse responze to JSON
         parsed_json = json.loads(req.text)
-        if parsed_json['detectFaces'] == 1:
+
+        #If the detected one person
+        if  parsed_json['detectFaces'] == 1:
             print Bcolors.OKGREEN + "Face detected " + Bcolors.ENDC
-            if parsed_json['recognised'] == True:
+            print "Confidence : ",parsed_json['faceConfidence'], "..............."
+            #save confidence to detector object (mass snaping)
+            person.setConfidence(int(parsed_json['faceConfidence']))
+            try:
+                print "Confidence : ",parsed_json['badDesc']
+            except:
+                print "ach"
+            #If not run snaping mode and person been recognised.
+            if not snapingRun and parsed_json['recognised'] == True:
                 print Bcolors.OKGREEN + "Yes" + Bcolors.ENDC
+                #person was detected
                 if lock.acquire(False) == True:
+                #Lockable block
+                    #set timeout (stop create new send thread)
                     timeout = True
+                    #show person and name in GUI
                     showNewPerson(decode_B64(parsed_json),parsed_json["name" + str(parsed_json["userId"])],parsed_json["enabled" + str(parsed_json["userId"])])
                     voice_synthesizer(parsed_json)
+                    #timeout between detections
+                    time.sleep(TIMEOUT_BETWEEN_DETECTIONS)
+                    #show defauld screen in GUI
                     showDefault()
+                    #deactivate timeout
                     timeout = False
                     lock.release()
             else:
                 print Bcolors.FAIL + "NO" + Bcolors.ENDC
         else:
             print Bcolors.WARNING + "Face not detected " + Bcolors.ENDC
-
+    #end send thread
     threadCount-=1
 
-def code_B64(frame):
-    global coun
+#forewer comunication whit server (alive client and set snaping mode)
+def liveCommunication(frequency):
+    global snapingRun
+    while True:
 
+        time.sleep(frequency)
+        try:
+            req = requests.post (url=URL_server_check, data="camraID=1", timeout=TIMEOUT_TO_SEND_REQUEST)
+        except requests.exceptions.RequestException as e:
+            print Bcolors.FAIL + "Sever not responding" + Bcolors.ENDC
+            print "NO"
+            continue
+        #parse responze to JSON
+        parsed_json = json.loads(req.text)
+        snapingRun  =  parsed_json['massEnroll']
+       
+        print "OK"
+        
+          
+        
+#Function to code frame to jpg and B64
+def code_B64(frame):
     img_str = cv2.imencode('.jpg', frame)[1].tostring()
+    #encodestring
     encoded_img = base64.encodestring(img_str)
+    #some bullshit (server requires)
     encoded_img = encoded_img.replace('+', '-')
     encoded_img = encoded_img.replace('/', '_')
     encoded_img = encoded_img.replace('=', '.')
     return encoded_img
 
+#Function to decode B64 to jpg
 def decode_B64(parsed_json):
     encoded_img = parsed_json["image" + str(parsed_json["id"])]
+    #some bullshit (server requires)
     encoded_img = encoded_img.replace('-', '+')
     encoded_img = encoded_img.replace('_', '/')
     encoded_img = encoded_img.replace('.', '=')
+    #decodestring
     decode_img = base64.decodestring(encoded_img)
-    
     return decode_img
    
-
+#Voice synthesizer
 def voice_synthesizer(parsed_json):
+    #get name
     name = parsed_json["name" + str(parsed_json["userId"])]
-    print name
+    #creat command
     command = "espeak -v sk --stdout '%s' | aplay" % (name)
+    #apply command
     os.system(command.encode('UTF-8'))
-    time.sleep(4)
-    
-def send_request(encoded_img):
+  
+#send request
+def send_request(url_server,encoded_img):
     try:    
-        return requests.post (url=URL_server, data="image="+encoded_img+"&camraID=1&getUserInfo=1", timeout=4)
+        return requests.post (url=url_server, data="image="+encoded_img+"&camraID=1&getUserInfo=1", timeout=TIMEOUT_TO_SEND_REQUEST)
     except requests.exceptions.RequestException as e:
         print Bcolors.FAIL + "Sever not responding" + Bcolors.ENDC
         return 404
@@ -95,4 +153,7 @@ def getCounterThreads():
 
 def isTimeout():
     return timeout
+
+def getSnapingRun():
+    return snapingRun
 
