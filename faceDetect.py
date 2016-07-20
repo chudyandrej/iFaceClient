@@ -214,7 +214,7 @@ def runFaceDetect(watchdog_name):
         sys.exit(1)
 #----------------------------------------
     #run forewer live communication
-    thread.start_new_thread(liveCommunication,(3,))
+    #thread.start_new_thread(liveCommunication,(3,))
     #forewer main run (camera processing)
     while True:
         #edit watch dog file (program is alive)
