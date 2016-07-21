@@ -5,9 +5,8 @@ import cv2
 import time
 import os
 from threading import Lock
-
 from gui import showNewPerson, showDefault
-
+import urllib2
 #-------------------------------------------------------
 #                       Settings
 #-------------------------------------------------------
@@ -47,15 +46,16 @@ def send_fame_to_iFaceSERVER(person):
     frame = person.getWindow()
     encoded_img = code_B64(frame)
     #send request
-    req = send_request(URL_server_recognise,encoded_img)
+    req = send_request(encoded_img)
+    print "FinalSEND"
 
     #If server not responding
     if not req == 404:
         #parse responze to JSON
-        parsed_json = json.loads(req.text)
+        parsed_json = json.loads(req)
 
         #If the detected one person
-        if  parsed_json['detectFaces'] == 1:
+        if parsed_json['status'] == 2 and parsed_json['detectFaces'] == 1:
             print Bcolors.OKGREEN + "Face detected " + Bcolors.ENDC
             print "Confidence : ",parsed_json['faceConfidence'], "..............."
             #save confidence to detector object (mass snaping)
@@ -74,7 +74,7 @@ def send_fame_to_iFaceSERVER(person):
                     timeout = True
                     #show person and name in GUI
                     showNewPerson(decode_B64(parsed_json),parsed_json["name" + str(parsed_json["userId"])],parsed_json["enabled" + str(parsed_json["userId"])])
-                    voice_synthesizer(parsed_json)
+                    #voice_synthesizer(parsed_json)
                     #timeout between detections
                     time.sleep(TIMEOUT_BETWEEN_DETECTIONS)
                     #show defauld screen in GUI
@@ -93,17 +93,18 @@ def send_fame_to_iFaceSERVER(person):
 def liveCommunication(frequency):
     global snapingRun
     while True:
-
         time.sleep(frequency)
         try:
-            req = requests.post (url=URL_server_check, data="camraID=1", timeout=TIMEOUT_TO_SEND_REQUEST)
+            req = urllib2.Request(URL_server_check, data="camraID=1")
+            response = urllib2.urlopen(req,timeout=TIMEOUT_TO_SEND_REQUEST)
         except requests.exceptions.RequestException as e:
             print Bcolors.FAIL + "Sever not responding" + Bcolors.ENDC
             print "NO"
             continue
         #parse responze to JSON
-        parsed_json = json.loads(req.text)
-        snapingRun  =  parsed_json['massEnroll']
+        parsed_json = json.loads(response.read())
+        if parsed_json['status'] == 2:
+            snapingRun  =  parsed_json['massEnroll']
        
         print "OK"
         
@@ -141,10 +142,13 @@ def voice_synthesizer(parsed_json):
     os.system(command.encode('UTF-8'))
   
 #send request
-def send_request(url_server,encoded_img):
-    try:    
-        return requests.post (url=url_server, data="image="+encoded_img+"&camraID=1&getUserInfo=1", timeout=TIMEOUT_TO_SEND_REQUEST)
-    except requests.exceptions.RequestException as e:
+def send_request(encoded_img):
+    try:
+        print "sendPriper"
+        req = urllib2.Request(URL_server_recognise, data="image="+encoded_img+"&camraID=1&getUserInfo=1")
+        response = urllib2.urlopen(req,timeout=TIMEOUT_TO_SEND_REQUEST)
+        return response.read()
+    except:
         print Bcolors.FAIL + "Sever not responding" + Bcolors.ENDC
         return 404
 
@@ -156,4 +160,3 @@ def isTimeout():
 
 def getSnapingRun():
     return snapingRun
-

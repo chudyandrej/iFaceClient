@@ -7,16 +7,17 @@ import datetime
 import math
 import os.path
 import copy
+from concurrent import futures
 
 from gui import getConfig, offConfig
-from communication import send_fame_to_iFaceSERVER,getCounterThreads,isTimeout, liveCommunication,getSnapingRun
+from communication import send_fame_to_iFaceSERVER,getCounterThreads,isTimeout, liveCommunication, getSnapingRun
 
 #-------------------------------------------------------
 #                       Settings
 #-------------------------------------------------------
 URL_IPCAMERA = "rtsp://admin:Admin12345@192.168.1.106/jpeg/ch2/sub/av_stream"
-PATH_HAARCASCADE = "./haarcascade_frontalface_alt2.xml"
-MIN_SIZE_FACE = 60                  #Distance from camera  (Big influence to performace)
+PATH_HAARCASCADE = "haarcascade_frontalface_alt2.xml"
+MIN_SIZE_FACE = 65                  #Distance from camera  (Big influence to performace)
 MAX_SIZE_FACE = 250                 #Distance from camera  (Big influence to performace)
 INTERVAL_UPDATE_WATCHDOG = [0,40]   #[minute , second]
 VALIDITY_FRAMES_STREAM = 15
@@ -28,7 +29,6 @@ persons = []
 bannObjects = []
 printOKCount = 0
 pointPrint = ()
-
 
 
 class Bcolors:
@@ -56,6 +56,7 @@ class Person:
         self.confidence = 0
         self.fakeDetectCount = 0
         self.fakeObject = False
+        self.trust = False
         
     #Drow
     def drowRectangle(self,frame):
@@ -77,7 +78,6 @@ class Person:
     #Set new confidence
     def setConfidence(self, confidence):
         #set color of rectangle  and better confidence
-
         if confidence > self.confidence:
             self.confidence = confidence
         self.n = 100 - int(self.confidence / 50) 
@@ -88,6 +88,7 @@ class Person:
         self.B = 0
 
     def setPosition(self, p1, p2):
+        self.trust = True
         self.p1 = p1
         self.p2 = p2
         self.validity = 10
@@ -99,18 +100,13 @@ class Person:
         return self.window
     def getValidity(self):
         return self.validity
+    def getTrust(self):
+        return self.trust
 
 
-
-def filterPersons(p1,limit_distance):
-#Calculate distance, sort, filter smaller as limit
-    rectangles_dist = []
-    map(lambda obj: rectangles_dist.append((obj,calsDistance(p1,obj.getPosition()))), persons)
-    rectangles_dist = sorted(rectangles_dist, key=lambda object: object[1])
-    rectangles_dist = filter(lambda object: object[1] < limit_distance,rectangles_dist)
-    return rectangles_dist
-
-
+#-------------------------------------------------------
+#            Click event Banning fake objects
+#-------------------------------------------------------
 def click_and_crop(event, x, y, flags, param):
 #Click event function (callback). Find fake object. 
     global bannObjects
@@ -124,7 +120,6 @@ def click_and_crop(event, x, y, flags, param):
             clickPrintOK(0,None,rectangles_dist[0][0].p1)
             bannObjects.append(copy.deepcopy(rectangles_dist[0][0]))
             persons.remove(rectangles_dist[0][0])
-
         print "POCET BANOV :",len(bannObjects)
 
 def clickPrintOK(code, frame, point):
@@ -136,16 +131,29 @@ def clickPrintOK(code, frame, point):
         if printOKCount >= 1:
             cv2.putText(frame,"OK",(pointPrint[0],pointPrint[1]), cv2.FONT_HERSHEY_SIMPLEX, 0.8,(0, 255,0 ),3,cv2.LINE_AA)
             printOKCount-=1
+########################################################
 
-            
-
+#-------------------------------------------------------
+#            Mini calculate functions
+#-------------------------------------------------------            
 def calsDistance(p1,p2):
     #calc absolut distance
     a = (p1[0] - p2[0]) 
     b = (p1[1] - p2[1])
     return  math.sqrt(a**2 + b**2)
 
+def filterPersons(p1,limit_distance):
+#Calculate distance, sort, filter smaller as limit
+    rectangles_dist = []
+    map(lambda obj: rectangles_dist.append((obj,calsDistance(p1,obj.getPosition()))), persons)
+    rectangles_dist = sorted(rectangles_dist, key=lambda object: object[1])
+    rectangles_dist = filter(lambda object: object[1] < limit_distance,rectangles_dist)
+    return rectangles_dist
+#########################################################
 
+#-------------------------------------------------------
+#            Finde and cut face from frame
+#------------------------------------------------------- 
 #Creat window from -> frame - opencvFrame p - point (x,y)
 def cutFrame(frame, p1, p2):
     #set size bonus edges -> %
@@ -180,7 +188,11 @@ def faceDetect(faceCascade, gray):
     )
     #return list of faces
     return faces
+########################################################
 
+#-------------------------------------------------------
+#            Watch dog message system
+#------------------------------------------------------- 
 #update shared file for watch dog (program is running)
 def updateWatchDogFile(watchdog_name):
     global LAST_RECORD_WATCHDOG
@@ -190,6 +202,7 @@ def updateWatchDogFile(watchdog_name):
         fo = open(watchdog_name, "wb")
         fo.write( "modify");
         fo.close()
+########################################################
 
 #Main function of face detection 
 def runFaceDetect(watchdog_name):
@@ -203,6 +216,7 @@ def runFaceDetect(watchdog_name):
     LAST_RECORD_WATCHDOG = datetime.datetime.now() 
     video_capture = cv2.VideoCapture(URL_IPCAMERA)      #Init camera stream argument -> URL / video 0 
     cv2.namedWindow(WINDOW_NAME, cv2.WINDOW_AUTOSIZE)
+   
     
 #------------------------------------------
 
@@ -214,9 +228,10 @@ def runFaceDetect(watchdog_name):
         sys.exit(1)
 #----------------------------------------
     #run forewer live communication
-    #thread.start_new_thread(liveCommunication,(3,))
+    thread.start_new_thread(liveCommunication,(3,))
     #forewer main run (camera processing)
     while True:
+       
         #edit watch dog file (program is alive)
         updateWatchDogFile(watchdog_name)
         #read new frame
@@ -233,7 +248,6 @@ def runFaceDetect(watchdog_name):
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         #detect faces
         faces = faceDetect(faceCascade, gray)
-
         copyFrame = frame.copy()
         for (x, y, w, h) in faces:
             p1 = (x,y)
@@ -244,6 +258,7 @@ def runFaceDetect(watchdog_name):
 
             if len(rectangles_dist) > 0:
                 rectangles_dist[0][0].setPosition(p1,p2)
+                #rectangles_dist[0][0].setWindow(frame)
                 rectangles_dist[0][0].setWindow(cutFrame(frame, p1, p2))
             else:
                 isBan = False
@@ -253,36 +268,42 @@ def runFaceDetect(watchdog_name):
                 if not isBan:
                     person = Person(p1,p2)
                     person.setWindow(cutFrame(frame, p1, p2))
+                    #person.setWindow(frame)
                     persons.append(person)
 
         ##########    Draw objects and make final operations ##########
+       
         for person in persons:
             #if is object still valid
             if person.getValidity() > 0:
-                person.drowRectangle(copyFrame)
-                #if threads pool is not full and is not timeout
-                if getCounterThreads() < 20 and not isTimeout():
-                    #send request
-                    thread.start_new_thread(send_fame_to_iFaceSERVER,(person,))
+                if  person.getTrust():
+                    person.drowRectangle(copyFrame)
+                    #if threads pool is not full and is not timeout
+                    if getCounterThreads() < 20 and not isTimeout():
+                        #send request
+                        thread.start_new_thread(send_fame_to_iFaceSERVER,(person,))
             else:
                 persons.remove(person)
+
         #-------------------------------------------------------------
             #cv2.imshow('win', window)  #show select face DEBUG
-
+       
         #if smaning mode running
-        if getSnapingRun() or getConfig(): 
+        if  getSnapingRun() or getConfig(): 
             #cv2.namedWindow("Snaping", cv2.WND_PROP_FULLSCREEN)          
             #cv2.setWindowProperty("Snaping", cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
             cv2.setMouseCallback(WINDOW_NAME, click_and_crop)
             clickPrintOK(1, copyFrame, None)
             cv2.imshow(WINDOW_NAME, copyFrame)    #show frame DEBUG   
+            #cv2.imshow("Gray", gray) 
         else:
             cv2.destroyWindow(WINDOW_NAME)
         #calculate FPS
         fps = int(1.0 /(time.time()-prev))
         prev = time.time()
-        print fps
-        #print "threds: ",getCounterThreads()
+        #print fps
+        print "Activ workers ", getCounterThreads() 
+
         key = cv2.waitKey(1) & 0xFF
         if key == ord('s'):
             offConfig()
