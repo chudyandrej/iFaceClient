@@ -47,17 +47,18 @@ def send_fame_to_iFaceSERVER(person):
     encoded_img = code_B64(frame)
     #send request
     req = send_request(encoded_img)
-    print "FinalSEND"
+   
 
     #If server not responding
     if not req == 404:
         #parse responze to JSON
+       
         parsed_json = json.loads(req)
+     
 
         #If the detected one person
         if parsed_json['status'] == 2 and parsed_json['detectFaces'] == 1:
             print Bcolors.OKGREEN + "Face detected " + Bcolors.ENDC
-            print "Confidence : ",parsed_json['faceConfidence'], "..............."
             #save confidence to detector object (mass snaping)
             person.setConfidence(int(parsed_json['faceConfidence']))
             try:
@@ -97,7 +98,7 @@ def liveCommunication(frequency):
         try:
             req = urllib2.Request(URL_server_check, data="camraID=1")
             response = urllib2.urlopen(req,timeout=TIMEOUT_TO_SEND_REQUEST)
-        except requests.exceptions.RequestException as e:
+        except:
             print Bcolors.FAIL + "Sever not responding" + Bcolors.ENDC
             print "NO"
             continue
@@ -144,7 +145,6 @@ def voice_synthesizer(parsed_json):
 #send request
 def send_request(encoded_img):
     try:
-        print "sendPriper"
         req = urllib2.Request(URL_server_recognise, data="image="+encoded_img+"&camraID=1&getUserInfo=1")
         response = urllib2.urlopen(req,timeout=TIMEOUT_TO_SEND_REQUEST)
         return response.read()

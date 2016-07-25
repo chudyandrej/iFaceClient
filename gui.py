@@ -77,6 +77,7 @@ def quit(event):
 def settings(event):
 	global  config
 	config = not config
+	
 
 def showNewPerson(photo,name, permition):
 	global nameLabel, personLabel, actual_person, alertLabel, okLabel

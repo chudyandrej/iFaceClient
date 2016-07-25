@@ -17,7 +17,7 @@ from communication import send_fame_to_iFaceSERVER,getCounterThreads,isTimeout, 
 #-------------------------------------------------------
 URL_IPCAMERA = "rtsp://admin:Admin12345@192.168.1.106/jpeg/ch2/sub/av_stream"
 PATH_HAARCASCADE = "haarcascade_frontalface_alt2.xml"
-MIN_SIZE_FACE = 65                  #Distance from camera  (Big influence to performace)
+MIN_SIZE_FACE = 60                  #Distance from camera  (Big influence to performace)
 MAX_SIZE_FACE = 250                 #Distance from camera  (Big influence to performace)
 INTERVAL_UPDATE_WATCHDOG = [0,40]   #[minute , second]
 VALIDITY_FRAMES_STREAM = 15
@@ -207,17 +207,16 @@ def updateWatchDogFile(watchdog_name):
 #Main function of face detection 
 def runFaceDetect(watchdog_name):
 #########    init values    ##############
-    global LAST_RECORD_WATCHDOG
+    global LAST_RECORD_WATCHDOG, persons
     window = ()
     prev = time.time()
     count_validity = VALIDITY_FRAMES_STREAM 
-    person_comed = False
-    global persons 
+    person_comed = False  
     LAST_RECORD_WATCHDOG = datetime.datetime.now() 
     video_capture = cv2.VideoCapture(URL_IPCAMERA)      #Init camera stream argument -> URL / video 0 
-    cv2.namedWindow(WINDOW_NAME, cv2.WINDOW_AUTOSIZE)
-   
-    
+    executor = futures.ThreadPoolExecutor(max_workers=10)
+    workers = []
+    oldConfig_var = getConfig()
 #------------------------------------------
 
 #######   load face cascade    ###########
@@ -231,11 +230,10 @@ def runFaceDetect(watchdog_name):
     thread.start_new_thread(liveCommunication,(3,))
     #forewer main run (camera processing)
     while True:
-       
         #edit watch dog file (program is alive)
         updateWatchDogFile(watchdog_name)
         #read new frame
-        ret, frame = video_capture.read()   #There program will be freez when camera will be disconect.
+        ret, gray = video_capture.read()   #There program will be freez when camera will be disconect.
         #read a new frame was unsucessful
         if not  ret:
             #Print error wait 2 s and try read again 
@@ -245,10 +243,9 @@ def runFaceDetect(watchdog_name):
             video_capture = cv2.VideoCapture(URL_IPCAMERA)
             continue
         #convert to GRAY
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
         #detect faces
         faces = faceDetect(faceCascade, gray)
-        copyFrame = frame.copy()
+        copyGray = gray.copy()
         for (x, y, w, h) in faces:
             p1 = (x,y)
             p2 = (x+w,y+h)
@@ -258,8 +255,7 @@ def runFaceDetect(watchdog_name):
 
             if len(rectangles_dist) > 0:
                 rectangles_dist[0][0].setPosition(p1,p2)
-                #rectangles_dist[0][0].setWindow(frame)
-                rectangles_dist[0][0].setWindow(cutFrame(frame, p1, p2))
+                rectangles_dist[0][0].setWindow(cutFrame(gray, p1, p2))
             else:
                 isBan = False
                 for ban in bannObjects:
@@ -267,48 +263,51 @@ def runFaceDetect(watchdog_name):
                         isBan = True
                 if not isBan:
                     person = Person(p1,p2)
-                    person.setWindow(cutFrame(frame, p1, p2))
-                    #person.setWindow(frame)
+                    person.setWindow(cutFrame(gray, p1, p2))
+                    #person.setWindow(gray)
                     persons.append(person)
 
-        ##########    Draw objects and make final operations ##########
-       
+        #-------------------------------------------------------
+        #            Drow rectangle and send person (frame)
+        #------------------------------------------------------- 
         for person in persons:
             #if is object still valid
             if person.getValidity() > 0:
                 if  person.getTrust():
-                    person.drowRectangle(copyFrame)
+                    person.drowRectangle(copyGray)
                     #if threads pool is not full and is not timeout
-                    if getCounterThreads() < 20 and not isTimeout():
+                    if len(workers) < 10 and not isTimeout():
                         #send request
-                        thread.start_new_thread(send_fame_to_iFaceSERVER,(person,))
+                        workers.append(executor.submit(send_fame_to_iFaceSERVER, person))
             else:
                 persons.remove(person)
-
-        #-------------------------------------------------------------
-            #cv2.imshow('win', window)  #show select face DEBUG
-       
+        ########################################################
+        #Delete done instances of worker pool
+        workers = filter(lambda worker:not worker.done(), workers)
+    
         #if smaning mode running
         if  getSnapingRun() or getConfig(): 
-            #cv2.namedWindow("Snaping", cv2.WND_PROP_FULLSCREEN)          
-            #cv2.setWindowProperty("Snaping", cv2.WND_PROP_FULLSCREEN, cv2.WINDOW_FULLSCREEN)
-            cv2.setMouseCallback(WINDOW_NAME, click_and_crop)
-            clickPrintOK(1, copyFrame, None)
-            cv2.imshow(WINDOW_NAME, copyFrame)    #show frame DEBUG   
-            #cv2.imshow("Gray", gray) 
+            if not (getConfig() or getSnapingRun())  == oldConfig_var:
+                cv2.namedWindow(WINDOW_NAME, cv2.WINDOW_AUTOSIZE)
+                cv2.setMouseCallback(WINDOW_NAME, click_and_crop)
+            clickPrintOK(1, copyGray, None)
+            cv2.imshow(WINDOW_NAME, copyGray)    
         else:
-            cv2.destroyWindow(WINDOW_NAME)
+            if not  getConfig() == oldConfig_var:
+                cv2.destroyWindow(WINDOW_NAME)
+
+        oldConfig_var = getConfig() or getSnapingRun()
         #calculate FPS
         fps = int(1.0 /(time.time()-prev))
         prev = time.time()
-        #print fps
-        print "Activ workers ", getCounterThreads() 
+        print fps
+        
+       
+        print "Activ workers ", len(workers)
 
         key = cv2.waitKey(1) & 0xFF
         if key == ord('s'):
             offConfig()
-       
-
     # When everything is done, release the capture
     video_capture.release()
     cv2.destroyAllWindows()
