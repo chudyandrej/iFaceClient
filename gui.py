@@ -95,14 +95,14 @@ def showNewPerson(photo,name, permition):
 	personLabel = mainCanvas.create_image(x_posImage,y_posImage, image=actual_person)
 	nameLabel = mainCanvas.create_text(w/2.5 ,h-h/7, text=name, font=font)
 
-
+	
 	if permition == 1:
-		alertLabel = mainCanvas.create_image(x_posImage -8 , y_posImage +120, image=approved)
-		okLabel = mainCanvas.create_image(x_posImage + 500,y_posImage +70 , image=ok)
+		alertLabel = mainCanvas.create_image(x_posImage - 8 , y_posImage + 120, image=approved)
+		okLabel = mainCanvas.create_image(x_posImage + 500,y_posImage + 70 , image=ok)
 	
 	else:
-		alertLabel = mainCanvas.create_image(x_posImage -8 , y_posImage +130 , image=rejected)
-		okLabel = mainCanvas.create_image(x_posImage + 500,y_posImage +70 , image=no)
+		alertLabel = mainCanvas.create_image(x_posImage - 8 , y_posImage + 130 , image=rejected)
+		okLabel = mainCanvas.create_image(x_posImage + 500,y_posImage + 70 , image=no)
 	
 
 def showDefault():

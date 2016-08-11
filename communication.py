@@ -3,8 +3,10 @@ import base64
 import requests
 import cv2
 import time
+import datetime
 import os
 from threading import Lock
+import threading
 from gui import showNewPerson, showDefault
 import urllib2
 #-------------------------------------------------------
@@ -14,7 +16,8 @@ URL_server_recognise = "http://192.168.1.157:8080/recognise"
 URL_server_check = "http://192.168.1.157:8080/check"
 TIMEOUT_BETWEEN_DETECTIONS = 4
 TIMEOUT_TO_SEND_REQUEST = 4
-
+BANN_PERSON_TIME = datetime.timedelta(0, 10, 0)     #min, sec, sto
+DETECTED_PERSONS = []
 ########################################################
 
 #-------------------------------------------------------
@@ -22,6 +25,7 @@ TIMEOUT_TO_SEND_REQUEST = 4
 #-------------------------------------------------------
 timeout = False
 lock = Lock()
+listLock = Lock()
 threadCount = 0
 snapingRun = False
 ########################################################
@@ -46,33 +50,31 @@ def send_fame_to_iFaceSERVER(person):
     frame = person.getWindow()
     encoded_img = code_B64(frame)
     #send request
-    req = send_request(encoded_img)
-   
-
+    req = send_request(encoded_img, person.getIdRectangle())
     #If server not responding
     if not req == 404:
         #parse responze to JSON
-       
         parsed_json = json.loads(req)
-     
 
+     
         #If the detected one person
+        print req
         if parsed_json['status'] == 2 and parsed_json['detectFaces'] == 1:
             print Bcolors.OKGREEN + "Face detected " + Bcolors.ENDC
             #save confidence to detector object (mass snaping)
             person.setConfidence(int(parsed_json['faceConfidence']))
-            try:
-                print "Confidence : ",parsed_json['badDesc']
-            except:
-                print "ach"
-            #If not run snaping mode and person been recognised.
-            if not snapingRun and parsed_json['recognised'] == True:
+         
+            if not snapingRun and parsed_json['recognised'] == 1:
                 print Bcolors.OKGREEN + "Yes" + Bcolors.ENDC
+                                     
+                person.personRecognised()
+               
                 #person was detected
-                if lock.acquire(False) == True:
+                if  lock.acquire(False) == True:
                 #Lockable block
                     #set timeout (stop create new send thread)
                     timeout = True
+                    print "TimeOut"
                     #show person and name in GUI
                     showNewPerson(decode_B64(parsed_json),parsed_json["name" + str(parsed_json["userId"])],parsed_json["enabled" + str(parsed_json["userId"])])
                     #voice_synthesizer(parsed_json)
@@ -84,7 +86,17 @@ def send_fame_to_iFaceSERVER(person):
                     timeout = False
                     lock.release()
             else:
-                print Bcolors.FAIL + "NO" + Bcolors.ENDC
+                if parsed_json['faceConfidence'] > 3000:
+                    if  lock.acquire(False) == True:
+                        print "BEGGER"
+                        #Lockable block
+                        #set timeout (stop create new send thread)
+                        timeout = True
+                        showNewPerson(cv2.imencode('.jpg', person.getWindow())[1].tostring(),'',None)
+                        time.sleep(TIMEOUT_BETWEEN_DETECTIONS)
+                        showDefault()
+                        timeout = False
+                        lock.release()
         else:
             print Bcolors.WARNING + "Face not detected " + Bcolors.ENDC
     #end send thread
@@ -96,21 +108,17 @@ def liveCommunication(frequency):
     while True:
         time.sleep(frequency)
         try:
-            req = urllib2.Request(URL_server_check, data="camraID=1")
-            response = urllib2.urlopen(req,timeout=TIMEOUT_TO_SEND_REQUEST)
+            req = requests.post(url=URL_server_check, data="camraID=1", timeout=4)
         except:
             print Bcolors.FAIL + "Sever not responding" + Bcolors.ENDC
             print "NO"
             continue
         #parse responze to JSON
-        parsed_json = json.loads(response.read())
+        parsed_json = json.loads(req.text)
         if parsed_json['status'] == 2:
             snapingRun  =  parsed_json['massEnroll']
-       
         print "OK"
-        
           
-        
 #Function to code frame to jpg and B64
 def code_B64(frame):
     img_str = cv2.imencode('.jpg', frame)[1].tostring()
@@ -142,15 +150,14 @@ def voice_synthesizer(parsed_json):
     #apply command
     os.system(command.encode('UTF-8'))
   
-#send request
-def send_request(encoded_img):
+
+def send_request(encoded_img, idRectangle):
     try:
-        req = urllib2.Request(URL_server_recognise, data="image="+encoded_img+"&camraID=1&getUserInfo=1")
-        response = urllib2.urlopen(req,timeout=TIMEOUT_TO_SEND_REQUEST)
-        return response.read()
+        req = requests.post(url=URL_server_recognise, data="image="+encoded_img+"&camraID=1&transType=1&getUserInfo=1&faceId="+str(idRectangle), timeout=4)
+        return req.text
     except:
         print Bcolors.FAIL + "Sever not responding" + Bcolors.ENDC
-        return 404
+   
 
 def getCounterThreads():
     return threadCount

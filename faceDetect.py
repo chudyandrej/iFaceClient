@@ -5,6 +5,7 @@ import concurrent.futures
 import time
 import datetime
 import math
+import random
 import os.path
 import copy
 from concurrent import futures
@@ -17,18 +18,20 @@ from communication import send_fame_to_iFaceSERVER,getCounterThreads,isTimeout, 
 #-------------------------------------------------------
 URL_IPCAMERA = "rtsp://admin:Admin12345@192.168.1.106/jpeg/ch2/sub/av_stream"
 PATH_HAARCASCADE = "haarcascade_frontalface_alt2.xml"
-MIN_SIZE_FACE = 60                  #Distance from camera  (Big influence to performace)
-MAX_SIZE_FACE = 250                 #Distance from camera  (Big influence to performace)
+MIN_SIZE_FACE = 55                  #Distance from camera  (Big influence to performace)
+MAX_SIZE_FACE = 170                 #Distance from camera  (Big influence to performace)
+MAX_DISTANCE_OBJ_FACE = 100
 INTERVAL_UPDATE_WATCHDOG = [0,40]   #[minute , second]
-VALIDITY_FRAMES_STREAM = 15
 WINDOW_NAME = "Camera"
+TIME_EXPIRE_FACEOBJECT = [0,8]  #[minute , second]
 #######################################################
 
 LAST_RECORD_WATCHDOG = None
 persons = []
-bannObjects = []
+
 printOKCount = 0
 pointPrint = ()
+PERSONID = random.randrange(0, 10000, 2) 
 
 
 class Bcolors:
@@ -46,21 +49,29 @@ class Bcolors:
 class Person:
     #Constructor
     def __init__(self, p1, p2):
+
+        global PERSONID
+        PERSONID+=1
+        if PERSONID > 10000:
+            PERSONID = 0
+        self.idRectangle = PERSONID
+        self.timestamp = datetime.datetime.now()
         self.p1 = p1
         self.p2 = p2
         self.R = 255
         self.G = 0
         self.B = 0
-        self.validity = 10
+        self.validity = 5
         self.window = ()
         self.confidence = 0
         self.fakeDetectCount = 0
         self.fakeObject = False
         self.trust = False
+        self.recognised = False
         
     #Drow
     def drowRectangle(self,frame):
-        #Load text 
+        #Load text
         if self.confidence < 1000:
             status = " Bad"
         elif self.confidence > 1000 and self.confidence < 3000:
@@ -70,11 +81,14 @@ class Person:
         elif self.confidence > 4000:
             status = " The best"
         self.validity-=1
-        font = cv2.FONT_HERSHEY_SIMPLEX
-        #drow text an value of confidence
-        cv2.putText(frame,str(self.confidence)+ status,(self.p1[0] - 15,self.p1[1] - 15), font, 0.8,(self.B, self.G,self.R ),3,cv2.LINE_AA)
-        #drow rectangle
-        return cv2.rectangle(frame, (self.p1[0],self.p1[1]), (self.p2[0],self.p2[1]), (self.B, self.G,self.R ), 6)
+        if getSnapingRun() or getConfig(): 
+            font = cv2.FONT_HERSHEY_SIMPLEX
+            #drow text an value of confidence
+            cv2.putText(frame,str(self.confidence)+ status,(self.p1[0] - 15,self.p1[1] - 15), font, 0.8,(self.B, self.G,self.R ),3,cv2.LINE_AA)
+            #drow rectangle
+            cv2.rectangle(frame, (self.p1[0],self.p1[1]), (self.p2[0],self.p2[1]), (self.B, self.G,self.R ), 6)
+            return frame
+
     #Set new confidence
     def setConfidence(self, confidence):
         #set color of rectangle  and better confidence
@@ -91,47 +105,37 @@ class Person:
         self.trust = True
         self.p1 = p1
         self.p2 = p2
-        self.validity = 10
+        self.validity = 5
+
+    def personRecognised(self):
+        self.recognised = True
+
     def getPosition(self):
         return self.p1 
+
     def setWindow(self,window):
         self.window = window
+
     def getWindow(self):
         return self.window
+
     def getValidity(self):
         return self.validity
+
     def getTrust(self):
         return self.trust
 
+    def isRecognised(self):
+        return self.recognised
 
-#-------------------------------------------------------
-#            Click event Banning fake objects
-#-------------------------------------------------------
-def click_and_crop(event, x, y, flags, param):
-#Click event function (callback). Find fake object. 
-    global bannObjects
-    if event == cv2.EVENT_LBUTTONDOWN:
-        p1 = (x,y)
-        rectangles_dist = filterPersons(p1,100)
-        if len(rectangles_dist):
-            for bann in bannObjects:
-                if calsDistance(rectangles_dist[0][0].p1,bann.p1) < 20 and calsDistance(rectangles_dist[0][0].p2,bann.p2) < 20:
-                    return
-            clickPrintOK(0,None,rectangles_dist[0][0].p1)
-            bannObjects.append(copy.deepcopy(rectangles_dist[0][0]))
-            persons.remove(rectangles_dist[0][0])
-        print "POCET BANOV :",len(bannObjects)
+    def getIdRectangle(self):
+        return self.idRectangle
 
-def clickPrintOK(code, frame, point):
-    global printOKCount, pointPrint
-    if code == 0:
-        printOKCount = 5
-        pointPrint = point
-    elif code == 1:
-        if printOKCount >= 1:
-            cv2.putText(frame,"OK",(pointPrint[0],pointPrint[1]), cv2.FONT_HERSHEY_SIMPLEX, 0.8,(0, 255,0 ),3,cv2.LINE_AA)
-            printOKCount-=1
-########################################################
+    def isExpire(self):
+        return (datetime.datetime.now() - self.timestamp) > datetime.timedelta(TIME_EXPIRE_FACEOBJECT[0], TIME_EXPIRE_FACEOBJECT[1], 0)
+
+
+
 
 #-------------------------------------------------------
 #            Mini calculate functions
@@ -142,13 +146,17 @@ def calsDistance(p1,p2):
     b = (p1[1] - p2[1])
     return  math.sqrt(a**2 + b**2)
 
-def filterPersons(p1,limit_distance):
+def findBestObject(p1):
 #Calculate distance, sort, filter smaller as limit
     rectangles_dist = []
     map(lambda obj: rectangles_dist.append((obj,calsDistance(p1,obj.getPosition()))), persons)
     rectangles_dist = sorted(rectangles_dist, key=lambda object: object[1])
-    rectangles_dist = filter(lambda object: object[1] < limit_distance,rectangles_dist)
-    return rectangles_dist
+
+    if len(rectangles_dist) >= 1:
+        best_object = rectangles_dist[0]
+        if best_object[1] < MAX_DISTANCE_OBJ_FACE:
+            return best_object[0]
+    return None
 #########################################################
 
 #-------------------------------------------------------
@@ -182,7 +190,7 @@ def faceDetect(faceCascade, gray):
     faces = faceCascade.detectMultiScale(
         gray,
         scaleFactor=1.1,
-        minNeighbors=2,     #Count of matches
+        minNeighbors=3,     #Count of matches
         minSize=(MIN_SIZE_FACE, MIN_SIZE_FACE),
         maxSize=(MAX_SIZE_FACE,MAX_SIZE_FACE)
     )
@@ -207,11 +215,10 @@ def updateWatchDogFile(watchdog_name):
 #Main function of face detection 
 def runFaceDetect(watchdog_name):
 #########    init values    ##############
+    print PERSONID
     global LAST_RECORD_WATCHDOG, persons
     window = ()
     prev = time.time()
-    count_validity = VALIDITY_FRAMES_STREAM 
-    person_comed = False  
     LAST_RECORD_WATCHDOG = datetime.datetime.now() 
     video_capture = cv2.VideoCapture(URL_IPCAMERA)      #Init camera stream argument -> URL / video 0 
     executor = futures.ThreadPoolExecutor(max_workers=10)
@@ -227,11 +234,12 @@ def runFaceDetect(watchdog_name):
         sys.exit(1)
 #----------------------------------------
     #run forewer live communication
-    thread.start_new_thread(liveCommunication,(3,))
+    thread.start_new_thread(liveCommunication,(10,))
     #forewer main run (camera processing)
     while True:
         #edit watch dog file (program is alive)
         updateWatchDogFile(watchdog_name)
+
         #read new frame
         ret, gray = video_capture.read()   #There program will be freez when camera will be disconect.
         #read a new frame was unsucessful
@@ -239,10 +247,11 @@ def runFaceDetect(watchdog_name):
             #Print error wait 2 s and try read again 
             print Bcolors.FAIL + "Error: Read fram from capture unsuccessful!" + Bcolors.ENDC
             print Bcolors.OKBLUE + "Recommend: Check connection of IP camera (ip addres, network)" + Bcolors.ENDC
-            time.sleep(2)
+            time.sleep(5)
             video_capture = cv2.VideoCapture(URL_IPCAMERA)
             continue
-        #convert to GRAY
+
+        persons = filter(lambda person: not person.isExpire(), persons)
         #detect faces
         faces = faceDetect(faceCascade, gray)
         copyGray = gray.copy()
@@ -250,33 +259,26 @@ def runFaceDetect(watchdog_name):
             p1 = (x,y)
             p2 = (x+w,y+h)
 
-            ##### assignment found face to object or creat new object  #####
-            rectangles_dist = filterPersons(p1,120)
-
-            if len(rectangles_dist) > 0:
-                rectangles_dist[0][0].setPosition(p1,p2)
-                rectangles_dist[0][0].setWindow(cutFrame(gray, p1, p2))
+            #calc distance between face and object. Filter 
+            bestObject = findBestObject(p1)
+            if not bestObject == None:
+                bestObject.setPosition(p1,p2)
+                bestObject.setWindow(cutFrame(gray, p1, p2))
             else:
-                isBan = False
-                for ban in bannObjects:
-                    if calsDistance(ban.p1,p1) < 30 and calsDistance(ban.p2,p2) < 30:
-                        isBan = True
-                if not isBan:
-                    person = Person(p1,p2)
-                    person.setWindow(cutFrame(gray, p1, p2))
-                    #person.setWindow(gray)
-                    persons.append(person)
+                person = Person(p1,p2)
+                person.setWindow(cutFrame(gray, p1, p2))
+                persons.append(person)
 
         #-------------------------------------------------------
-        #            Drow rectangle and send person (frame)
+        #         Drow rectangle and send person (frame)
         #------------------------------------------------------- 
         for person in persons:
             #if is object still valid
             if person.getValidity() > 0:
-                if  person.getTrust():
+                if person.getTrust():
                     person.drowRectangle(copyGray)
                     #if threads pool is not full and is not timeout
-                    if len(workers) < 10 and not isTimeout():
+                    if len(workers) < 10 and not isTimeout() and not person.isRecognised():
                         #send request
                         workers.append(executor.submit(send_fame_to_iFaceSERVER, person))
             else:
@@ -289,8 +291,7 @@ def runFaceDetect(watchdog_name):
         if  getSnapingRun() or getConfig(): 
             if not (getConfig() or getSnapingRun())  == oldConfig_var:
                 cv2.namedWindow(WINDOW_NAME, cv2.WINDOW_AUTOSIZE)
-                cv2.setMouseCallback(WINDOW_NAME, click_and_crop)
-            clickPrintOK(1, copyGray, None)
+                #cv2.setMouseCallback(WINDOW_NAME, click_and_crop)
             cv2.imshow(WINDOW_NAME, copyGray)    
         else:
             if not  getConfig() == oldConfig_var:
@@ -301,8 +302,6 @@ def runFaceDetect(watchdog_name):
         fps = int(1.0 /(time.time()-prev))
         prev = time.time()
         print fps
-        
-       
         print "Activ workers ", len(workers)
 
         key = cv2.waitKey(1) & 0xFF

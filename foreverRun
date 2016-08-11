@@ -34,7 +34,7 @@ while true; do
     #if first chcek is the same as second
     if [ "$FIRST_MOD_CHACK" == "$SECOND_MOD_CHACK" ]
     then
-        echo "Reseting program ..."
+        >&2 echo "Reseting program..."
         kill $PID
         python iFaceClient.py $SHERE_FILE_NAME  &
         PID=`pgrep -x python`
