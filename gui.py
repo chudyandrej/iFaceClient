@@ -16,7 +16,7 @@ h = 768
 root = Tk()
 mainCanvas = None
 
-font = tkFont.Font(family="system", size=60,weight='bold')
+font = tkFont.Font(family="system", size=50,weight='bold')
 
 unknown_person = None
 rejected = None
@@ -29,8 +29,8 @@ actual_person = None
 x_posImage = w / 2.5
 y_posImage = h / 2.3
 
-w_photo = int(w/2.4)
-h_photo = int(h/1.5)
+w_photo = int(w/2.6)
+h_photo = int(h/1.3)
 
 personLabel = None
 nameLabel = None
@@ -93,7 +93,7 @@ def showNewPerson(photo,name, permition):
 			actual_person = unknown_person
 			print "Rase................"
 	personLabel = mainCanvas.create_image(x_posImage,y_posImage, image=actual_person)
-	nameLabel = mainCanvas.create_text(w/2.5 ,h-h/7, text=name, font=font)
+	nameLabel = mainCanvas.create_text(w/2.5 ,h-h/8, text=name, font=font)
 
 	
 	if permition == 1:

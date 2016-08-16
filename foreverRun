@@ -6,7 +6,7 @@ function ctrl_c() {
 }
 #settings
 SHERE_FILE_NAME="./watchdogFILE"
-WAIT_BETWEEN_CHECK_FILE=60
+WAIT_BETWEEN_CHECK_FILE=180
 
 
 #creat shere file

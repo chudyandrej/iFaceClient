@@ -16,14 +16,9 @@ from communication import send_fame_to_iFaceSERVER,getCounterThreads,isTimeout, 
 #-------------------------------------------------------
 #                       Settings
 #-------------------------------------------------------
-URL_IPCAMERA = "rtsp://admin:Admin12345@192.168.1.106/jpeg/ch2/sub/av_stream"
-PATH_HAARCASCADE = "haarcascade_frontalface_alt2.xml"
-MIN_SIZE_FACE = 55                  #Distance from camera  (Big influence to performace)
-MAX_SIZE_FACE = 170                 #Distance from camera  (Big influence to performace)
 MAX_DISTANCE_OBJ_FACE = 100
-INTERVAL_UPDATE_WATCHDOG = [0,40]   #[minute , second]
-WINDOW_NAME = "Camera"
-TIME_EXPIRE_FACEOBJECT = [0,8]  #[minute , second]
+INTERVAL_UPDATE_WATCHDOG = 2   #minutes
+TIME_EXPIRE_FACEOBJECT = 8  #second
 #######################################################
 
 LAST_RECORD_WATCHDOG = None
@@ -132,7 +127,7 @@ class Person:
         return self.idRectangle
 
     def isExpire(self):
-        return (datetime.datetime.now() - self.timestamp) > datetime.timedelta(TIME_EXPIRE_FACEOBJECT[0], TIME_EXPIRE_FACEOBJECT[1], 0)
+        return (datetime.datetime.now() - self.timestamp) > datetime.timedelta(seconds=TIME_EXPIRE_FACEOBJECT)
 
 
 
@@ -186,13 +181,13 @@ def cutFrame(frame, p1, p2):
     return frame[a:b,c:d]
 
 #Detect faces in frame-> faceCascade - loaded harr. cascade, gray - frame in grayscale (black white)
-def faceDetect(faceCascade, gray):
+def faceDetect(faceCascade, gray,scale,minNeig, min_size, max_size):
     faces = faceCascade.detectMultiScale(
         gray,
-        scaleFactor=1.1,
-        minNeighbors=3,     #Count of matches
-        minSize=(MIN_SIZE_FACE, MIN_SIZE_FACE),
-        maxSize=(MAX_SIZE_FACE,MAX_SIZE_FACE)
+        scaleFactor=scale,
+        minNeighbors=minNeig,     #Count of matches
+        minSize=(min_size, min_size),
+        maxSize=(max_size,max_size)
     )
     #return list of faces
     return faces
@@ -205,7 +200,7 @@ def faceDetect(faceCascade, gray):
 def updateWatchDogFile(watchdog_name):
     global LAST_RECORD_WATCHDOG
     #if it's time to update
-    if (datetime.datetime.now() - LAST_RECORD_WATCHDOG) >= datetime.timedelta(INTERVAL_UPDATE_WATCHDOG[0], INTERVAL_UPDATE_WATCHDOG[1], 0):
+    if (datetime.datetime.now() - LAST_RECORD_WATCHDOG) >= datetime.timedelta(minutes=INTERVAL_UPDATE_WATCHDOG):
         LAST_RECORD_WATCHDOG= datetime.datetime.now()
         fo = open(watchdog_name, "wb")
         fo.write( "modify");
@@ -213,28 +208,27 @@ def updateWatchDogFile(watchdog_name):
 ########################################################
 
 #Main function of face detection 
-def runFaceDetect(watchdog_name):
+def runFaceDetect(watchdog_name, config):
 #########    init values    ##############
-    print PERSONID
     global LAST_RECORD_WATCHDOG, persons
     window = ()
     prev = time.time()
     LAST_RECORD_WATCHDOG = datetime.datetime.now() 
-    video_capture = cv2.VideoCapture(URL_IPCAMERA)      #Init camera stream argument -> URL / video 0 
-    executor = futures.ThreadPoolExecutor(max_workers=10)
+    video_capture = cv2.VideoCapture(config['URL_CAMERA_STREAM'])      #Init camera stream argument -> URL / video 0 
+    executor = futures.ThreadPoolExecutor(max_workers=config['WORKERS_count'])
     workers = []
     oldConfig_var = getConfig()
 #------------------------------------------
 
 #######   load face cascade    ###########
-    if os.path.exists(PATH_HAARCASCADE):            #if cascade exit
-        faceCascade = cv2.CascadeClassifier(PATH_HAARCASCADE)       #load cascade
+    if os.path.exists(config['PATH_HAARCASCADE']):            #if cascade exit
+        faceCascade = cv2.CascadeClassifier(config['PATH_HAARCASCADE'])       #load cascade
     else:
         print Bcolors.FAIL + "Error: Haar cascade not found!" + bcolors.ENDC
         sys.exit(1)
 #----------------------------------------
     #run forewer live communication
-    thread.start_new_thread(liveCommunication,(10,))
+    thread.start_new_thread(liveCommunication,(config['URL_server_check'],config['TIMEOUT_live_mes'], config['TIMEOUT_request']))
     #forewer main run (camera processing)
     while True:
         #edit watch dog file (program is alive)
@@ -248,12 +242,12 @@ def runFaceDetect(watchdog_name):
             print Bcolors.FAIL + "Error: Read fram from capture unsuccessful!" + Bcolors.ENDC
             print Bcolors.OKBLUE + "Recommend: Check connection of IP camera (ip addres, network)" + Bcolors.ENDC
             time.sleep(5)
-            video_capture = cv2.VideoCapture(URL_IPCAMERA)
+            video_capture = cv2.VideoCapture(config['URL_CAMERA_STREAM'])
             continue
 
         persons = filter(lambda person: not person.isExpire(), persons)
         #detect faces
-        faces = faceDetect(faceCascade, gray)
+        faces = faceDetect(faceCascade, gray,config['SCALE_factor'],config['MIN_neighbors'], config['MIN_size_face'], config['MAX_size_face'] )
         copyGray = gray.copy()
         for (x, y, w, h) in faces:
             p1 = (x,y)
@@ -278,9 +272,9 @@ def runFaceDetect(watchdog_name):
                 if person.getTrust():
                     person.drowRectangle(copyGray)
                     #if threads pool is not full and is not timeout
-                    if len(workers) < 10 and not isTimeout() and not person.isRecognised():
+                    if len(workers) < config['WORKERS_count'] and not isTimeout() and not person.isRecognised():
                         #send request
-                        workers.append(executor.submit(send_fame_to_iFaceSERVER, person))
+                        workers.append(executor.submit(send_fame_to_iFaceSERVER, person,config))
             else:
                 persons.remove(person)
         ########################################################
@@ -290,19 +284,19 @@ def runFaceDetect(watchdog_name):
         #if smaning mode running
         if  getSnapingRun() or getConfig(): 
             if not (getConfig() or getSnapingRun())  == oldConfig_var:
-                cv2.namedWindow(WINDOW_NAME, cv2.WINDOW_AUTOSIZE)
+                cv2.namedWindow(config['WINDOW_name'], cv2.WINDOW_AUTOSIZE)
                 #cv2.setMouseCallback(WINDOW_NAME, click_and_crop)
-            cv2.imshow(WINDOW_NAME, copyGray)    
+            cv2.imshow(config['WINDOW_name'], copyGray)    
         else:
             if not  getConfig() == oldConfig_var:
-                cv2.destroyWindow(WINDOW_NAME)
+                cv2.destroyWindow(config['WINDOW_name'])
 
         oldConfig_var = getConfig() or getSnapingRun()
         #calculate FPS
         fps = int(1.0 /(time.time()-prev))
         prev = time.time()
-        print fps
-        print "Activ workers ", len(workers)
+        #print fps
+        #print "Activ workers ", len(workers)
 
         key = cv2.waitKey(1) & 0xFF
         if key == ord('s'):
