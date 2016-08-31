@@ -2,9 +2,10 @@
 
 	//###   VŠEOBECNÉ NASTAVENIA PROGRAMU   ###
 	"cameraId" : "1" ,	//ID senzora (vrámci jednej inštalácie ide o jedinečné čílo)
-	"transType" : "1" ,		// Typ tranzakcie (1 => vstup, 2 => vystup)
-	"WORKERS_count" : 10,
-	"WINDOW_name" : "Camera",
+	"transType" : 1 ,		// Typ tranzakcie (1 => vstup, 2 => vystup)
+	"WORKERS_count" : 8,
+	"LANGUAGE" : "SK", 		// Možnosti jazykov SK / RU / EN
+	"WINDOW_name" : "View",
 
 	//###   NASTAVENIA SIETOVÝCH PRIPOJENÍ   ###
 	"URL_server_recognise" : "http://192.168.1.157:8080/recognise",		//URL servera iFace kde sa zasielajú dáta na vyhodnotenie
@@ -16,17 +17,21 @@
 	"SCALE_factor" : 1.1,
 	"MIN_neighbors" : 3,
 	"MIN_size_face": 55, // Minimálna veľkosť tváre na obraze -> cím ďalej človek stojí od kamery tým je jeho tvár menšia -> ovpyvnuje MAX vzdialenosť človeka od kamery
-	"MAX_size_face": 170, // Maximálna veľkosť tváre na obraze -> cím bližšie človek stojí pri kamere tým je jeho tvár väčšia -> ovpyvnuje MIN vzdialenosť človeka od kamery
+	"MAX_size_face": 200, // Maximálna veľkosť tváre na obraze -> cím bližšie človek stojí pri kamere tým je jeho tvár väčšia -> ovpyvnuje MIN vzdialenosť človeka od kamery
 	"PATH_HAARCASCADE" : "./haarcascade_frontalface_alt2.xml",	//Cesta k xml kaskáde ktorá slúži ako template pre nájdenie tváre v obraze
 
 
 	//###   TIMEOUTS    ###
-	"TIMEOUT_between_display": 1.5,	// Čas v sekundách koľko bude detekovaná osoba zobrazovaná na obrazovke
-	"TIMEOUT_request": 4,	// Čas v sekundách kolko proces čaká na odpoveď servera po nejakej požiadavke
-	"TIMEOUT_live_mes" : 10 //Čas medzi poslaniami komunikačných správ medzi serverom a klientom (kontrola živosti, informácia o enrolle)
+	"TIMEOUT_between_display": 2.2,	// Čas v sekundách koľko bude detekovaná osoba zobrazovaná na obrazovke
+	"TIMEOUT_request": 8,	// Čas v sekundách kolko proces čaká na odpoveď servera po nejakej požiadavke
+	"TIMEOUT_live_mes" : 10, //Čas medzi poslaniami komunikačných správ medzi serverom a klientom (kontrola živosti, informácia o enrolle)
 
+	//###  LOGS   ###
+	"NAME_backup_file": "iFaceClient.log",
+	"MAX_size_log": 50000,//byts          Veľkosť v Bytoch
+	"COUNT_backup": 4,
 
-
-
+	//###  PREMENNÉ GENEROVANÉ PROGRAMOM   ###
+	"FRAME_active_part" : "(352, 640) x (0, 135)"
 
 }

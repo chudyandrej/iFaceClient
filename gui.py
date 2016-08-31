@@ -6,6 +6,7 @@ import tkFont
 import threading
 from StringIO import StringIO
 import os
+import time
 
 #Display resolution
 w = 1366
@@ -21,8 +22,12 @@ font = tkFont.Font(family="system", size=50,weight='bold')
 unknown_person = None
 rejected = None
 approved = None
+unrecognised = None
 ok = None
 no = None
+up = None
+server = None
+camera = None
 
 actual_person = None
 
@@ -37,11 +42,11 @@ nameLabel = None
 alertLabel = None
 okLabel = None
 
-config = False
+view = False
+setting = False
 
-
-def runGui():
-	global nameLabel, personLabel ,unknown_person, actual_person, mainCanvas,approved,rejected, ok, no
+def runGui(config):
+	global nameLabel, personLabel ,unknown_person, actual_person, mainCanvas,approved,rejected,unrecognised, ok, no, up, server, camera
 
 	root.title("iFaceClient")
 	root.attributes('-fullscreen', True)
@@ -52,10 +57,37 @@ def runGui():
 	thickness_frame = 9
 
 	logo = ImageTk.PhotoImage(file='./images/ApisLogo.gif')
-	rejected = ImageTk.PhotoImage(file='./images/rejected.gif')
-	approved = ImageTk.PhotoImage(file='./images/ok2.gif')
 	ok = ImageTk.PhotoImage(file='./images/ok.gif')
 	no = ImageTk.PhotoImage(file='./images/x.gif')
+	up = ImageTk.PhotoImage(file='./images/up.gif')
+	server = ImageTk.PhotoImage(file='./images/server.gif')
+	camera = ImageTk.PhotoImage(file='./images/camera.gif')
+
+
+	if config['LANGUAGE'] == 'SK':
+		if config['transType'] == 1:
+			approved = ImageTk.PhotoImage(file='./images/entry_sk.gif')
+		else:
+			approved = ImageTk.PhotoImage(file='./images/exit_sk.gif')
+		rejected = ImageTk.PhotoImage(file='./images/rejected_sk.gif')
+		unrecognised = ImageTk.PhotoImage(file='./images/unrecognized_sk.gif')
+
+	elif config['LANGUAGE'] == 'EN':
+		if config['transType'] == 1:
+			approved = ImageTk.PhotoImage(file='./images/entry_en.gif')
+		else:
+			approved = ImageTk.PhotoImage(file='./images/exit_en.gif')
+		rejected = ImageTk.PhotoImage(file='./images/rejected_en.gif')
+		unrecognised = ImageTk.PhotoImage(file='./images/unrecognized_en.gif')
+
+	elif config['LANGUAGE'] == 'RU':
+		if config['transType'] == 1:
+			approved = ImageTk.PhotoImage(file='./images/entry_ru.gif')
+		else:
+			approved = ImageTk.PhotoImage(file='./images/exit_ru.gif')
+		rejected = ImageTk.PhotoImage(file='./images/rejected_ru.gif')
+		unrecognised = ImageTk.PhotoImage(file='./images/unrecognized_ru.gif')
+
 	
 	unknown_person = Image.open("./images/unknown_person.jpg", mode='r' )
 	unknown_person = unknown_person.resize((w_photo,h_photo), Image.ANTIALIAS) 
@@ -68,22 +100,54 @@ def runGui():
 
 	mainCanvas.bind_all('<q>', quit) 
 	mainCanvas.bind_all('<s>', settings) 
+	mainCanvas.bind_all('<w>', viewer) 
 	root.mainloop()
   
 def quit(event):
 	root.destroy()
 	os._exit(0)
 
-def settings(event):
-	global  config
-	config = not config
-	
+def offViewer():
+	global view
+	view = False
 
-def showNewPerson(photo,name, permition):
+def viewer(event):
+	global  view
+	view = not view
+
+def getView():
+	return view 
+
+def settings(event):
+	global  setting
+	setting = not setting
+
+def getSettings():
+	return setting 
+
+def offSettings():
+	global setting
+	setting = False
+
+
+def showUp():
+	upLabel = mainCanvas.create_image(x_posImage + 500,y_posImage + 70 , image=up)
+	time.sleep(0.1)
+	mainCanvas.delete(upLabel)
+
+def serverNotResponding():
+	serverL = mainCanvas.create_image(x_posImage - 440,y_posImage - 240 , image=server)
+	time.sleep(1)
+	mainCanvas.delete(serverL)
+
+def cameraError():
+	cmaeraL = mainCanvas.create_image(x_posImage - 400,y_posImage - 200 , image=camera)
+	time.sleep(5)
+	mainCanvas.delete(cmaeraL)
+
+def showNewPerson(photo,name, permition, logger):
 	global nameLabel, personLabel, actual_person, alertLabel, okLabel
-		
 	mainCanvas.delete(personLabel)
-	print len(photo)
 	if not len(photo) == 0 :
 		try:
 			actual_person = Image.open(StringIO(photo + "LL"))
@@ -91,17 +155,19 @@ def showNewPerson(photo,name, permition):
 			actual_person = ImageTk.PhotoImage(image=actual_person)
 		except:
 			actual_person = unknown_person
-			print "Rase................"
+			logger.error("GUI new person load photo!")
 	personLabel = mainCanvas.create_image(x_posImage,y_posImage, image=actual_person)
 	nameLabel = mainCanvas.create_text(w/2.5 ,h-h/8, text=name, font=font)
+	print permition
 
-	
 	if permition == 1:
-		alertLabel = mainCanvas.create_image(x_posImage - 8 , y_posImage + 120, image=approved)
+		alertLabel = mainCanvas.create_image(x_posImage - 8 , y_posImage + 140, image=approved)
 		okLabel = mainCanvas.create_image(x_posImage + 500,y_posImage + 70 , image=ok)
-	
-	else:
-		alertLabel = mainCanvas.create_image(x_posImage - 8 , y_posImage + 130 , image=rejected)
+	elif permition == -1:
+		alertLabel = mainCanvas.create_image(x_posImage - 8 , y_posImage + 140 , image=rejected)
+		okLabel = mainCanvas.create_image(x_posImage + 500,y_posImage + 70 , image=no)
+	else: 
+		alertLabel = mainCanvas.create_image(x_posImage - 8 , y_posImage + 140 , image=unrecognised)
 		okLabel = mainCanvas.create_image(x_posImage + 500,y_posImage + 70 , image=no)
 	
 
@@ -115,11 +181,6 @@ def showDefault():
 	personLabel = mainCanvas.create_image(x_posImage,y_posImage, image=unknown_person)
 	mainCanvas.delete(nameLabel)
 	
-def getConfig():
-	return config 
-def offConfig():
-	global config
-	config = False
 
 
 		
