@@ -14,18 +14,18 @@ from concurrent import futures
 from ast import literal_eval as make_tuple
 
 from gui import getView, viewer, offViewer, cameraError, getSettings, settings,offSettings
-from communication import send_fame_to_iFaceSERVER,isTimeout, liveCommunication, getenrollRun
+from communication import send_fame_to_iFaceSERVER,isTimeout, liveCommunication, getEnrollRun
 
 #-------------------------------------------------------
 #                       Settings
 #-------------------------------------------------------
 MAX_DISTANCE_OBJ_FACE = 100
 INTERVAL_UPDATE_WATCHDOG = 2   #minutes
-TIME_EXPIRE_FACEOBJECT = 10  #second
+TIME_EXPIRE_FACEOBJECT = 15  #second
 #######################################################
 
 LAST_RECORD_WATCHDOG = None
-persons = []
+OBJECTS = []
 
 cliced = False
 MIN_SIZE_WINDOW = 30
@@ -60,7 +60,7 @@ class Person:
         self.R = 255
         self.G = 0
         self.B = 0
-        self.validity = 5
+        self.validity = 3
         self.window = ()
         self.confidence = 0
         self.fakeDetectCount = 0
@@ -80,7 +80,7 @@ class Person:
         elif self.confidence > 4000:
             status = " The best"
         self.validity-=1
-        if getenrollRun() or getView(): 
+        if getEnrollRun() or getView(): 
             font = cv2.FONT_HERSHEY_SIMPLEX
             #drow text an value of confidence
             cv2.putText(frame,str(self.confidence)+ status,(self.p1[0] - 15,self.p1[1] - 15), font, 0.8,(self.B, self.G,self.R ),3,cv2.LINE_AA)
@@ -146,7 +146,7 @@ def calsDistance(p1,p2):
 def findBestObject(p1):
 #Calculate distance, sort, filter smaller as limit
     rectangles_dist = []
-    map(lambda obj: rectangles_dist.append((obj,calsDistance(p1,obj.getPosition()))), persons)
+    map(lambda obj: rectangles_dist.append((obj,calsDistance(p1,obj.getPosition()))), OBJECTS)
     rectangles_dist = sorted(rectangles_dist, key=lambda object: object[1])
 
     if len(rectangles_dist) >= 1:
@@ -167,12 +167,11 @@ def cutFrame(frame, p1, p2,width, height):
     #size of frame
 
     #trim edges
-    a = int(p1[1]-increaseY*2) if int(p1[1]-increaseY) >= 0 else 0  
-    b = int(p2[1]+increaseY) if int(p2[1]+increaseY) <= width else width  
+    a = int(p1[1]-increaseY) if int(p1[1]-increaseY) >= 0 else 0  
+    b = int(p2[1]+increaseY) if int(p2[1]+increaseY) <= height else height  
     c = int(p1[0]-increaseX) if int(p1[0]-increaseX) >= 0 else 0  
-    d = int(p2[0]+ increaseX) if int(p2[0]+ increaseX)  <= height else height  
+    d = int(p2[0]+ increaseX) if int(p2[0]+ increaseX)  <= width else width  
     #width of window must be divisible 4
-
     if (b-a) > MIN_SIZE_WINDOW and (d-c) > MIN_SIZE_WINDOW: 
         residue = (d - c) % 4
         if not residue == 0:
@@ -181,13 +180,16 @@ def cutFrame(frame, p1, p2,width, height):
             else:
                 d = d + residue
         #cut frame
+  
         result = frame[a:b,c:d]
-        #cv2.imshow("Face", result)
+        cv2.imshow("Face", result)
         return result
     else:
         return None
-
-#Detect faces in frame-> faceCascade - loaded harr. cascade, gray - frame in grayscale (black white)
+#-------------------------------------------------------
+#                    Face detector
+#-------------------------------------------------------
+#Detect faces in frame-> faceCascade - loaded harr. cascade, gray - frame in grayscale (black white), It is multi thread function!!!
 def faceDetect(faceCascade, gray,scale,minNeig, min_size, max_size):
     faces = faceCascade.detectMultiScale(
         gray,
@@ -235,7 +237,7 @@ def click_and_crop(event, x, y, flags, param):
 
 
 
-def showActivePart(frame, points):
+def drawActivePart(frame, points):
 
     font = cv2.FONT_HERSHEY_SIMPLEX
     if len(points) == 1:
@@ -257,142 +259,158 @@ def changeConfigFile(regex, newValue):
 
 #Main function of face detection 
 def runFaceDetect(watchdog_name, config, logger):
-#########    init values    ##############
-    global LAST_RECORD_WATCHDOG, persons
-    window = ()
-    prev = time.time()
+    global LAST_RECORD_WATCHDOG, OBJECTS
+#--------------------------------------------
+#               init values    
+#--------------------------------------------
+    prev = time.time()      #save time because calculate FPS
     LAST_RECORD_WATCHDOG = datetime.datetime.now() 
     video_capture = cv2.VideoCapture(config['URL_CAMERA_STREAM'])      #Init camera stream argument -> URL / video 0 
-    executor = futures.ThreadPoolExecutor(max_workers=config['WORKERS_count'])
-    workers = []
-    oldConfig_var = getView()
-    oldSettings_var = getSettings()
-  
-    loaded_size = False
-    width = None
-    height = None
-    points = []
-    points_backup = []
-       
-#------------------------------------------
+    executor = futures.ThreadPoolExecutor(max_workers=config['WORKERS_count'])  #Create pool of workers 
 
-#######   load face cascade    ###########
+    points = []                                                 #two points in settings mode   
+    strPoints = config['FRAME_active_part'].split(' x ')        #load points from config file 
+    points.append(make_tuple(strPoints[0]))                     #save loaded point
+    points.append(make_tuple(strPoints[1]))                     #save loaded point
+    points_backup = points                                      #create backup of points
+
+    oldConfig_var = getView()           #old status of view window (on / off)
+    oldSettings_var = getSettings()     #old status of settings window (on / off)
+
+#--------------------------------------------
+#          declarations variables    
+#--------------------------------------------
+    workers = []        #array of workers
+    load_size = False     #if size of capture was loaded
+    width = None            #width of frame
+    height = None           #height of frame
+       
+
+#--------------------------------------------
+#            load face cascade    
+#--------------------------------------------
     if os.path.exists(config['PATH_HAARCASCADE']):            #if cascade exit
         faceCascade = cv2.CascadeClassifier(config['PATH_HAARCASCADE'])       #load cascade
     else:
         print Bcolors.FAIL + "Error: Haar cascade not found!" + bcolors.ENDC
         logger.error("Haar cascade not found!")
         sys.exit(1)
-#----------------------------------------
-    #run forewer live communication
-    thread.start_new_thread(liveCommunication,(config['URL_server_check'],config['TIMEOUT_live_mes'], config['TIMEOUT_request']))
-    
-    strPoints = config['FRAME_active_part'].split(' x ')
-    points.append(make_tuple(strPoints[0]))
-    points.append(make_tuple(strPoints[1]))
 
+#--------------------------------------------
+#         start asynchronous thread    
+#--------------------------------------------
+    thread.start_new_thread(liveCommunication,(config['URL_server_check'],config['TIMEOUT_live_mes'], config['TIMEOUT_request'], logger))
+  
+#--------------------------------------------
+#         mani loop of program    
+#--------------------------------------------
     while True:
-        #edit watch dog file (program is alive)
-        updateWatchDogFile(watchdog_name)
-
-        #read new frame
-       
-        ret, gray = video_capture.read()   #There program will be freez when camera will be disconect.
+        
+        updateWatchDogFile(watchdog_name)           #edit watch dog file (program is alive)
+        ret, gray = video_capture.read()            #read new frame    #There program will be freez when camera will be disconect.
            
-        #read a new frame was unsucessful
-        if not  ret:
+        if not  ret:            #read a new frame was unsucessful
             #Print error wait 2 s and try read again 
             print Bcolors.FAIL + "Error: Read fram from capture unsuccessful!" + Bcolors.ENDC
             print Bcolors.OKBLUE + "Recommend: Check connection of IP camera (ip addres, network)" + Bcolors.ENDC
             logger.error("Read fram from capture unsuccessful!")
-            cameraError()
-            video_capture = cv2.VideoCapture(config['URL_CAMERA_STREAM'])
-            continue  
-        if not loaded_size:
-            loaded_size = True
-            width = len(gray)
-            height = len(gray[1]) 
-       
-        settingsView = gray.copy()
-        gray = gray[min(points,key=lambda point:point[1])[1]:max(points,key=lambda point:point[1])[1],min(points,key=lambda point:point[0])[0]:max(points,key=lambda point:point[0])[0]]
-        copyGray = gray.copy()
-        showActivePart(settingsView, points)
-            
-        
-        if not getenrollRun():
-            persons = filter(lambda person: not person.isExpire(), persons)
-        #detect faces
+            cameraError()           #show warning in GUI
+            video_capture = cv2.VideoCapture(config['URL_CAMERA_STREAM'])       #try set new capture
+            continue
 
-        faces = faceDetect(faceCascade, gray,config['SCALE_factor'],config['MIN_neighbors'], config['MIN_size_face'], config['MAX_size_face'] )
+        if not load_size:       #load size of frame one time
+            loaded_size = True
+            width = len(gray[1])
+            height = len(gray) 
+       
+        settingsView = gray.copy()      #create copy of gray frame
+        gray = gray[min(points,key=lambda point:point[1])[1]:max(points,key=lambda point:point[1])[1],
+                    min(points,key=lambda point:point[0])[0]:max(points,key=lambda point:point[0])[0]]    #cut frame
+        copyGray = gray.copy()      #copy of cute frame because of draw rectangle
         
+        if getSettings():       #if settings is active, draw active part of frame
+            drawActivePart(settingsView, points)
+            
+        if not getEnrollRun():      #if not enroll mode filter of expite objectis is active
+            OBJECTS = filter(lambda person: not person.isExpire(), OBJECTS)
+
+        faces = faceDetect(faceCascade, gray,config['SCALE_factor'],config['MIN_neighbors'], config['MIN_size_face'], config['MAX_size_face'])  #detect faces 
+          
+        #--------------------------------------------
+        #  Program must find every face a new object 
+        #--------------------------------------------
         for (x, y, w, h) in faces:
-            p1 = (x,y)
-            p2 = (x+w,y+h)
+            p1 = (x,y)          #save point 1 of face
+            p2 = (x+w,y+h)      #save point 2 of face
 
             #calc distance between face and object. Filter 
             bestObject = findBestObject(p1)
-            cutedFrame = cutFrame(gray, p1, p2, width, height)
-            if not cutedFrame == None:
-                if not bestObject == None:
+            cutedFrame = cutFrame(gray, p1, p2, width, height)      #cut face form frame
+            if not cutedFrame == None:          #If cut of face be successful
+                if len(cutedFrame) == 0:
+                     logger.error("SAVE CUT FRAME TO OBJ is 0")
+                if not bestObject == None:      #If exist match any object update or create new
                     bestObject.setPosition(p1,p2)
-                    bestObject.setWindow(cutedFrame)
+                    bestObject.setWindow(cutedFrame.copy())
                 else:
-                    person = Person(p1,p2)
-                    person.setWindow(cutedFrame)
-                    persons.append(person)
+                    newObject = Person(p1,p2)           #create new
+                    newObject.setWindow(cutedFrame.copy())
+                    OBJECTS.append(newObject)
 
         #-------------------------------------------------------
-        #         Drow rectangle and send person (frame)
+        #         Drow rectangle and send object (frame)
         #------------------------------------------------------- 
-        for person in persons:
+        for obj in OBJECTS:
             #if is object still valid
-            if person.getValidity() > 0:
-                if person.getTrust():
-                    person.drowRectangle(copyGray)
-                    #if threads pool is not full and is not timeout
+            if obj.getValidity() > 0:
+                if obj.getTrust():
+                    obj.drowRectangle(copyGray)         #use object drow rectangle and decrement vakidity flag
 
-                    if len(workers) < config['WORKERS_count'] and not isTimeout() and not person.isRecognised():
+                    if len(workers) < config['WORKERS_count'] and not isTimeout() and not obj.isRecognised():       #if worked pool in not full and not timeout and not object recognised.
                         #send request
-                        workers.append(executor.submit(send_fame_to_iFaceSERVER, person,config, logger))
+                        workers.append(executor.submit(send_fame_to_iFaceSERVER, obj,config, logger))           #send obj to recognised
             else:
-                persons.remove(person)
+                OBJECTS.remove(obj)
         ########################################################
         #Delete done instances of worker pool
-        workers = filter(lambda worker:not worker.done(), workers)
+        workers = filter(lambda worker:not worker.done(), workers)      #remove done jobs
         
 
         #if smaning mode running
-        if  getenrollRun() or getView(): 
-            if not (getView() or getenrollRun())  == oldConfig_var:
-                cv2.namedWindow(config['WINDOW_name'], 3)
-            cv2.imshow(config['WINDOW_name'], copyGray)
+        if  getEnrollRun() or getView():            #if switch on enroll or view flag 
+            if not (getView() or getEnrollRun())  == oldConfig_var:     #if view status be switch on right now (first view)
+                cv2.namedWindow(config['VIEW_window_name'], 3)   #Init window
+                cv2.moveWindow(config['VIEW_window_name'], config['VIEW_window_x_pos'], config['VIEW_window_y_pos'])
+            cv2.imshow(config['VIEW_window_name'], copyGray)     #show frame in window
             
         else:
-            if not  getView() == oldConfig_var:
-                cv2.destroyWindow(config['WINDOW_name'])
+            if not  getView() == oldConfig_var:         #if View mode was shut down right now 
+                cv2.destroyWindow(config['VIEW_window_name'])    #destroy view window
 
-        if not oldSettings_var and  getSettings():
-            cv2.namedWindow('Settings', 3)
-            cv2.setMouseCallback('Settings', click_and_crop , param=(width,height,points))
-            points_backup = copy.copy(points)
+        if not oldSettings_var and  getSettings():     #if settings status be switch on right now (first view) 
+            cv2.namedWindow(config['SETTINGS_window_name'], 3)      #init window
+            cv2.moveWindow(config['SETTINGS_window_name'], config['SETTINGS_window_x_pos'], config['SETTINGS_window_y_pos'])             
+            cv2.setMouseCallback(config['SETTINGS_window_name'], click_and_crop , param=(width,height,points))      #set window listener
+            points_backup = copy.copy(points)   #and make copy of actual points of active frame
 
             
-        if oldSettings_var and  not getSettings():
-            cv2.destroyWindow('Settings')
-            if len (points) == 2 and not config['FRAME_active_part'] == str(points[0])+' x '+str(points[1]):
+        if oldSettings_var and  not getSettings():   #if settings mode was shut down right now 
+            cv2.destroyWindow(config['SETTINGS_window_name'])              #destroy settings window
+            if len (points) == 2 and not config['FRAME_active_part'] == str(points[0])+' x '+str(points[1]):    #save select active area to congig
                 changeConfigFile('(?<="FRAME_active_part")\s*:\s*"[0-9,x() ]+"', ' : "'+str(points[0])+' x '+str(points[1])+'"')
     
-        if getSettings():
-            cv2.imshow('Settings', settingsView)
+        if getSettings():       #show frame in window
+            cv2.imshow(config['SETTINGS_window_name'], settingsView)
 
+        #make backup of flags
         oldSettings_var = getSettings()
-        oldConfig_var = getView() or getenrollRun()
+        oldConfig_var = getView() or getEnrollRun()
         #calculate FPS
         fps = int(1.0 /(time.time()-prev))
         prev = time.time()
-        #print "FPS: ", fps
+        
         #print "Activ workers ", len(workers)
-
+        #kays listners
         key = cv2.waitKey(1) & 0xFF
         if key == ord('w'):
             viewer(None)
@@ -406,8 +424,6 @@ def runFaceDetect(watchdog_name, config, logger):
             cv2.destroyWindow('Settings')
             points = points_backup
             
-
-
     # When everything is done, release the capture
     video_capture.release()
     cv2.destroyAllWindows()

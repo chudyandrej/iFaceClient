@@ -158,7 +158,6 @@ def showNewPerson(photo,name, permition, logger):
 			logger.error("GUI new person load photo!")
 	personLabel = mainCanvas.create_image(x_posImage,y_posImage, image=actual_person)
 	nameLabel = mainCanvas.create_text(w/2.5 ,h-h/8, text=name, font=font)
-	print permition
 
 	if permition == 1:
 		alertLabel = mainCanvas.create_image(x_posImage - 8 , y_posImage + 140, image=approved)

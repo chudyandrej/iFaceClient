@@ -5,7 +5,14 @@
 	"transType" : 1 ,		// Typ tranzakcie (1 => vstup, 2 => vystup)
 	"WORKERS_count" : 8,
 	"LANGUAGE" : "SK", 		// Možnosti jazykov SK / RU / EN
-	"WINDOW_name" : "View",
+	//###   NASTAVENIE OKIEN   ###	
+	"VIEW_window_name" : "View",
+	"VIEW_window_x_pos" : 0,
+	"VIEW_window_y_pos" : 0,
+	"SETTINGS_window_name" : "Settings",
+	"SETTINGS_window_x_pos" : 400,
+	"SETTINGS_window_y_pos" : 0,
+
 
 	//###   NASTAVENIA SIETOVÝCH PRIPOJENÍ   ###
 	"URL_server_recognise" : "http://192.168.1.157:8080/recognise",		//URL servera iFace kde sa zasielajú dáta na vyhodnotenie
@@ -32,6 +39,6 @@
 	"COUNT_backup": 4,
 
 	//###  PREMENNÉ GENEROVANÉ PROGRAMOM   ###
-	"FRAME_active_part" : "(352, 640) x (0, 135)"
+	"FRAME_active_part" : "(352, 640) x (1, 109)"
 
 }

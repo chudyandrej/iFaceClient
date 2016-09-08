@@ -9,6 +9,7 @@ from threading import Lock
 import threading
 from gui import showNewPerson, showDefault, showUp, serverNotResponding
 import urllib2
+import copy
 
 #-------------------------------------------------------
 #                    Global variables
@@ -39,11 +40,11 @@ def send_fame_to_iFaceSERVER(person,config, logger):
    
 
     #get cut window frame and code to b64
-    frame = person.getWindow()
+    frame = copy.copy(person.getWindow())
     try:
         encoded_img = code_B64(frame)
     except Exception,e: 
-        logger.error("Problem with encoding image! "+str(type(e))+" | Error text:"+str(e))
+        logger.error("ENCODE FRAME TO SEND -> frame size: "+ str(len(frame))+" Problem with encoding image! "+str(type(e))+" | Error text: "+str(e))
 
     #send request
    
@@ -86,9 +87,9 @@ def send_fame_to_iFaceSERVER(person,config, logger):
                         #set timeout (stop create new send thread)
                         timeout = True
                         try:
-                            image = cv2.imencode('.jpg', person.getWindow())[1].tostring()
+                            image = cv2.imencode('.jpg', frame)[1].tostring()
                         except Exception,e:
-                            logger.error("Problem with encoding image! "+str(type(e))+" | Error text:"+str(e))
+                            logger.error("UNKNOWN PERSON CODE IMAGE -> frame size: "+ str(len(frame))+" Problem with encoding image! "+str(type(e))+" | Error text: "+str(e))
                         showNewPerson(image,'',None, logger)
                         time.sleep(config['TIMEOUT_between_display'])
                         showDefault()
@@ -153,7 +154,7 @@ def decode_B64(parsed_json):
     return decode_img
    
 #forewer comunication whit server (alive client and set snaping mode)
-def liveCommunication(url_server, wait_time, req_timeout):
+def liveCommunication(url_server, wait_time, req_timeout, logger):
     global enrollRun
     while True:
         time.sleep(wait_time)
@@ -186,7 +187,7 @@ def send_request(url_server,camraID ,transType , encoded_img, idRectangle,req_ti
 def isTimeout():
     return timeout
 
-def getenrollRun():
+def getEnrollRun():
     return enrollRun
 
 
