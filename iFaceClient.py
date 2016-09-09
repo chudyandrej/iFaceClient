@@ -35,7 +35,7 @@ def main():
 	logger.addHandler(ch)
 	logger.addHandler(fh)
 	################################################
-
+	logger.warn("Program is STARTING !")
 
 	t = threading.Thread(target=runFaceDetect, args=(sys.argv[1],config, logger))
 	t.start()

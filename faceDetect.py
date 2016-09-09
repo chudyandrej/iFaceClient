@@ -32,7 +32,7 @@ MIN_SIZE_WINDOW = 30
 PERSONID = random.randrange(0, 10000, 2) 
 
 
-
+#object for color output in terminal
 class Bcolors:
     HEADER = '\033[95m'
     OKBLUE = '\033[94m'
@@ -63,7 +63,6 @@ class Person:
         self.validity = 3
         self.window = ()
         self.confidence = 0
-        self.fakeDetectCount = 0
         self.fakeObject = False
         self.trust = False
         self.recognised = False
@@ -182,7 +181,7 @@ def cutFrame(frame, p1, p2,width, height):
         #cut frame
   
         result = frame[a:b,c:d]
-        cv2.imshow("Face", result)
+        #cv2.imshow("Face", result)
         return result
     else:
         return None
@@ -240,21 +239,21 @@ def click_and_crop(event, x, y, flags, param):
 def drawActivePart(frame, points):
 
     font = cv2.FONT_HERSHEY_SIMPLEX
-    if len(points) == 1:
-        cv2.putText(frame,'o',(points[0][0]-7,points[0][1]+7), font,0.8,(0,0,255),7,cv2.LINE_AA)
-    elif len(points) == 2:
-        cv2.putText(frame,'o',(points[0][0]-7,points[0][1]+7), font,0.8,(0,0,255),7,cv2.LINE_AA)
-        cv2.putText(frame,'o',(points[1][0]-7,points[1][1]+7),font, 0.8,(0,100,255),7,cv2.LINE_AA)
-        cv2.rectangle(frame, points[0], points[1], (0, 255, 0), 2)
+    if len(points) == 1:                #if existing only one point
+        cv2.putText(frame,'o',(points[0][0]-7,points[0][1]+7), font,0.8,(0,0,255),7,cv2.LINE_AA)    #show point on frame
+    elif len(points) == 2:              #if existing two points 
+        cv2.putText(frame,'o',(points[0][0]-7,points[0][1]+7), font,0.8,(0,0,255),7,cv2.LINE_AA)    #show point
+        cv2.putText(frame,'o',(points[1][0]-7,points[1][1]+7),font, 0.8,(0,100,255),7,cv2.LINE_AA)  #show point
+        cv2.rectangle(frame, points[0], points[1], (0, 255, 0), 2)          #draw rectangle over points
         
 
 def changeConfigFile(regex, newValue):
-    file_ = open("config.json", "r")
-    config_str = file_.read();
+    file_ = open("config.json", "r")    #load config file
+    config_str = file_.read();          #read file
     file_.close()
     file_ = open("config.json", "w")
-    actualizedConfig = re.sub(regex, newValue ,config_str)
-    file_.write(actualizedConfig)
+    actualizedConfig = re.sub(regex, newValue ,config_str)      #replace settings of window
+    file_.write(actualizedConfig)       #write a new settings
     file_.close()
 
 #Main function of face detection 
@@ -305,124 +304,126 @@ def runFaceDetect(watchdog_name, config, logger):
 #         mani loop of program    
 #--------------------------------------------
     while True:
-        
-        updateWatchDogFile(watchdog_name)           #edit watch dog file (program is alive)
-        ret, gray = video_capture.read()            #read new frame    #There program will be freez when camera will be disconect.
+        try: 
+            updateWatchDogFile(watchdog_name)           #edit watch dog file (program is alive)
+            ret, gray = video_capture.read()            #read new frame    #There program will be freez when camera will be disconect.
+               
+            if not  ret:            #read a new frame was unsucessful
+                #Print error wait 2 s and try read again 
+                print Bcolors.FAIL + "Error: Read fram from capture unsuccessful!" + Bcolors.ENDC
+                print Bcolors.OKBLUE + "Recommend: Check connection of IP camera (ip addres, network)" + Bcolors.ENDC
+                logger.error("Read fram from capture unsuccessful!")
+                cameraError()           #show warning in GUI
+                video_capture = cv2.VideoCapture(config['URL_CAMERA_STREAM'])       #try set new capture
+                continue
+
+            if not load_size:       #load size of frame one time
+                loaded_size = True
+                width = len(gray[1])
+                height = len(gray) 
            
-        if not  ret:            #read a new frame was unsucessful
-            #Print error wait 2 s and try read again 
-            print Bcolors.FAIL + "Error: Read fram from capture unsuccessful!" + Bcolors.ENDC
-            print Bcolors.OKBLUE + "Recommend: Check connection of IP camera (ip addres, network)" + Bcolors.ENDC
-            logger.error("Read fram from capture unsuccessful!")
-            cameraError()           #show warning in GUI
-            video_capture = cv2.VideoCapture(config['URL_CAMERA_STREAM'])       #try set new capture
-            continue
-
-        if not load_size:       #load size of frame one time
-            loaded_size = True
-            width = len(gray[1])
-            height = len(gray) 
-       
-        settingsView = gray.copy()      #create copy of gray frame
-        gray = gray[min(points,key=lambda point:point[1])[1]:max(points,key=lambda point:point[1])[1],
-                    min(points,key=lambda point:point[0])[0]:max(points,key=lambda point:point[0])[0]]    #cut frame
-        copyGray = gray.copy()      #copy of cute frame because of draw rectangle
-        
-        if getSettings():       #if settings is active, draw active part of frame
-            drawActivePart(settingsView, points)
+            settingsView = gray.copy()      #create copy of gray frame
+            gray = gray[min(points,key=lambda point:point[1])[1]:max(points,key=lambda point:point[1])[1],
+                        min(points,key=lambda point:point[0])[0]:max(points,key=lambda point:point[0])[0]]    #cut frame
+            copyGray = gray.copy()      #copy of cute frame because of draw rectangle
             
-        if not getEnrollRun():      #if not enroll mode filter of expite objectis is active
-            OBJECTS = filter(lambda person: not person.isExpire(), OBJECTS)
+            if getSettings():       #if settings is active, draw active part of frame
+                drawActivePart(settingsView, points)
+                
+            if not getEnrollRun():      #if not enroll mode filter of expite objectis is active
+                OBJECTS = filter(lambda person: not person.isExpire(), OBJECTS)
 
-        faces = faceDetect(faceCascade, gray,config['SCALE_factor'],config['MIN_neighbors'], config['MIN_size_face'], config['MAX_size_face'])  #detect faces 
-          
-        #--------------------------------------------
-        #  Program must find every face a new object 
-        #--------------------------------------------
-        for (x, y, w, h) in faces:
-            p1 = (x,y)          #save point 1 of face
-            p2 = (x+w,y+h)      #save point 2 of face
+            faces = faceDetect(faceCascade, gray,config['SCALE_factor'],config['MIN_neighbors'], config['MIN_size_face'], config['MAX_size_face'])  #detect faces 
+              
+            #--------------------------------------------
+            #  Program must find every face a new object 
+            #--------------------------------------------
+            for (x, y, w, h) in faces:
+                p1 = (x,y)          #save point 1 of face
+                p2 = (x+w,y+h)      #save point 2 of face
 
-            #calc distance between face and object. Filter 
-            bestObject = findBestObject(p1)
-            cutedFrame = cutFrame(gray, p1, p2, width, height)      #cut face form frame
-            if not cutedFrame == None:          #If cut of face be successful
-                if len(cutedFrame) == 0:
-                     logger.error("SAVE CUT FRAME TO OBJ is 0")
-                if not bestObject == None:      #If exist match any object update or create new
-                    bestObject.setPosition(p1,p2)
-                    bestObject.setWindow(cutedFrame.copy())
+                #calc distance between face and object. Filter 
+                bestObject = findBestObject(p1)
+                cutedFrame = cutFrame(gray, p1, p2, width, height)      #cut face form frame
+                if not cutedFrame == None:          #If cut of face be successful
+                    if len(cutedFrame) == 0:
+                         logger.error("SAVE CUT FRAME TO OBJ is 0")
+                    if not bestObject == None:      #If exist match any object update or create new
+                        bestObject.setPosition(p1,p2)
+                        bestObject.setWindow(cutedFrame.copy())
+                    else:
+                        newObject = Person(p1,p2)           #create new
+                        newObject.setWindow(cutedFrame.copy())
+                        OBJECTS.append(newObject)
+
+            #-------------------------------------------------------
+            #         Drow rectangle and send object (frame)
+            #------------------------------------------------------- 
+            for obj in OBJECTS:
+                #if is object still valid
+                if obj.getValidity() > 0:
+                    if obj.getTrust():
+                        obj.drowRectangle(copyGray)         #use object drow rectangle and decrement vakidity flag
+
+                        if len(workers) < config['WORKERS_count'] and not isTimeout() and not obj.isRecognised():       #if worked pool in not full and not timeout and not object recognised.
+                            #send request
+                            workers.append(executor.submit(send_fame_to_iFaceSERVER, obj,config, logger))           #send obj to recognised
                 else:
-                    newObject = Person(p1,p2)           #create new
-                    newObject.setWindow(cutedFrame.copy())
-                    OBJECTS.append(newObject)
+                    OBJECTS.remove(obj)
+            ########################################################
+            #Delete done instances of worker pool
+            workers = filter(lambda worker:not worker.done(), workers)      #remove done jobs
+            
 
-        #-------------------------------------------------------
-        #         Drow rectangle and send object (frame)
-        #------------------------------------------------------- 
-        for obj in OBJECTS:
-            #if is object still valid
-            if obj.getValidity() > 0:
-                if obj.getTrust():
-                    obj.drowRectangle(copyGray)         #use object drow rectangle and decrement vakidity flag
-
-                    if len(workers) < config['WORKERS_count'] and not isTimeout() and not obj.isRecognised():       #if worked pool in not full and not timeout and not object recognised.
-                        #send request
-                        workers.append(executor.submit(send_fame_to_iFaceSERVER, obj,config, logger))           #send obj to recognised
+            #if smaning mode running
+            if  getEnrollRun() or getView():            #if switch on enroll or view flag 
+                if not (getView() or getEnrollRun())  == oldConfig_var:     #if view status be switch on right now (first view)
+                    cv2.namedWindow(config['VIEW_window_name'], 3)   #Init window
+                    cv2.moveWindow(config['VIEW_window_name'], config['VIEW_window_x_pos'], config['VIEW_window_y_pos'])
+                cv2.imshow(config['VIEW_window_name'], copyGray)     #show frame in window
+                
             else:
-                OBJECTS.remove(obj)
-        ########################################################
-        #Delete done instances of worker pool
-        workers = filter(lambda worker:not worker.done(), workers)      #remove done jobs
+                if not  getView() == oldConfig_var:         #if View mode was shut down right now 
+                    cv2.destroyWindow(config['VIEW_window_name'])    #destroy view window
+
+            if not oldSettings_var and  getSettings():     #if settings status be switch on right now (first view) 
+                cv2.namedWindow(config['SETTINGS_window_name'], 3)      #init window
+                cv2.moveWindow(config['SETTINGS_window_name'], config['SETTINGS_window_x_pos'], config['SETTINGS_window_y_pos'])             
+                cv2.setMouseCallback(config['SETTINGS_window_name'], click_and_crop , param=(width,height,points))      #set window listener
+                points_backup = copy.copy(points)   #and make copy of actual points of active frame
+
+                
+            if oldSettings_var and  not getSettings():   #if settings mode was shut down right now 
+                cv2.destroyWindow(config['SETTINGS_window_name'])              #destroy settings window
+                if len (points) == 2 and not config['FRAME_active_part'] == str(points[0])+' x '+str(points[1]):    #save select active area to congig
+                    changeConfigFile('(?<="FRAME_active_part")\s*:\s*"[0-9,x() ]+"', ' : "'+str(points[0])+' x '+str(points[1])+'"')
         
+            if getSettings():       #show frame in window
+                cv2.imshow(config['SETTINGS_window_name'], settingsView)
 
-        #if smaning mode running
-        if  getEnrollRun() or getView():            #if switch on enroll or view flag 
-            if not (getView() or getEnrollRun())  == oldConfig_var:     #if view status be switch on right now (first view)
-                cv2.namedWindow(config['VIEW_window_name'], 3)   #Init window
-                cv2.moveWindow(config['VIEW_window_name'], config['VIEW_window_x_pos'], config['VIEW_window_y_pos'])
-            cv2.imshow(config['VIEW_window_name'], copyGray)     #show frame in window
+            #make backup of flags
+            oldSettings_var = getSettings()
+            oldConfig_var = getView() or getEnrollRun()
+            #calculate FPS
+            fps = int(1.0 /(time.time()-prev))
+            prev = time.time()
             
-        else:
-            if not  getView() == oldConfig_var:         #if View mode was shut down right now 
-                cv2.destroyWindow(config['VIEW_window_name'])    #destroy view window
+            #print "Activ workers ", len(workers)
+            #kays listners
+            key = cv2.waitKey(1) & 0xFF
+            if key == ord('w'):
+                viewer(None)
+            elif key == ord('s'):
+                settings(None)
 
-        if not oldSettings_var and  getSettings():     #if settings status be switch on right now (first view) 
-            cv2.namedWindow(config['SETTINGS_window_name'], 3)      #init window
-            cv2.moveWindow(config['SETTINGS_window_name'], config['SETTINGS_window_x_pos'], config['SETTINGS_window_y_pos'])             
-            cv2.setMouseCallback(config['SETTINGS_window_name'], click_and_crop , param=(width,height,points))      #set window listener
-            points_backup = copy.copy(points)   #and make copy of actual points of active frame
-
-            
-        if oldSettings_var and  not getSettings():   #if settings mode was shut down right now 
-            cv2.destroyWindow(config['SETTINGS_window_name'])              #destroy settings window
-            if len (points) == 2 and not config['FRAME_active_part'] == str(points[0])+' x '+str(points[1]):    #save select active area to congig
-                changeConfigFile('(?<="FRAME_active_part")\s*:\s*"[0-9,x() ]+"', ' : "'+str(points[0])+' x '+str(points[1])+'"')
-    
-        if getSettings():       #show frame in window
-            cv2.imshow(config['SETTINGS_window_name'], settingsView)
-
-        #make backup of flags
-        oldSettings_var = getSettings()
-        oldConfig_var = getView() or getEnrollRun()
-        #calculate FPS
-        fps = int(1.0 /(time.time()-prev))
-        prev = time.time()
-        
-        #print "Activ workers ", len(workers)
-        #kays listners
-        key = cv2.waitKey(1) & 0xFF
-        if key == ord('w'):
-            viewer(None)
-        elif key == ord('s'):
-            settings(None)
-
-        elif key == 27:
-            offViewer()
-            offSettings()
-            oldSettings_var = False
-            cv2.destroyWindow('Settings')
-            points = points_backup
+            elif key == 27:
+                offViewer()
+                offSettings()
+                oldSettings_var = False
+                cv2.destroyWindow('Settings')
+                points = points_backup
+        except Exception,e:
+            logger.error("FATAL ERROR !!! IN MAIN LOOP | Type: "+str(type(e))+" Description: "+str(e))
             
     # When everything is done, release the capture
     video_capture.release()

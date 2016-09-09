@@ -33,102 +33,106 @@ class Bcolors:
 
 #Function for send frame to iFace server
 def send_fame_to_iFaceSERVER(person,config, logger):
-    global timeout, lock, detectedMess
-    detectedMess = filter(lambda a: (datetime.datetime.now() - a[1]) < datetime.timedelta(seconds=15), detectedMess)
-    #Counter of threads
-   
-   
-
-    #get cut window frame and code to b64
-    frame = copy.copy(person.getWindow())
     try:
-        encoded_img = code_B64(frame)
-    except Exception,e: 
-        logger.error("ENCODE FRAME TO SEND -> frame size: "+ str(len(frame))+" Problem with encoding image! "+str(type(e))+" | Error text: "+str(e))
+        global timeout, lock, detectedMess
+        detectedMess = filter(lambda a: (datetime.datetime.now() - a[1]) < datetime.timedelta(seconds=15), detectedMess)
+        #Counter of threads
+       
+       
 
-    #send request
-   
-    req = send_request(config['URL_server_recognise'],config['cameraId'],str(config['transType']),encoded_img, person.getIdRectangle(),config['TIMEOUT_request'])
-    #If server not responding
-    if not req == 404:
-        #parse responze to JSON
-        parsed_json = json.loads(req)
-        
-        #If the detected one person
-        if parsed_json['status'] == 2:
+        #get cut window frame and code to b64
+        frame = copy.copy(person.getWindow())
+        try:
+            encoded_img = code_B64(frame)
+        except Exception,e: 
+            logger.error("ENCODE FRAME TO SEND -> frame size: "+ str(len(frame))+" Problem with encoding image! "+str(type(e))+" | Error text: "+str(e))
 
-            person.setConfidence(int(parsed_json['faceConfidence']))
-            if not enrollRun:
-                if parsed_json['msgStatus'] == 3:   #person was detected
-                    print Bcolors.OKGREEN + parsed_json["name" + str(parsed_json["userId"])] + Bcolors.ENDC 
-                    lock.acquire(True)
-                    person.personRecognised()
-                    detectedMess.append([parsed_json,datetime.datetime.now()])
-                    #Lockable block
-                    #set timeout (stop create new send thread)
-                    timeout = True
-                    #show person and name in GUI
-                    showNewPerson(decode_B64(parsed_json),parsed_json["name" + str(parsed_json["userId"])],parsed_json["enabled" + str(parsed_json["userId"])], logger)
-                    logger.info("Detected person: "+parsed_json["name" + str(parsed_json["userId"])])     
-                    #voice_synthesizer(parsed_json)
-                    #timeout between detections
-                    time.sleep(config['TIMEOUT_between_display'])
-                    #show defauld screen in GUI
-                    showDefault()
-                    #deactivate timeout
-                    timeout = False
-                    lock.release()
-
-                elif parsed_json['msgStatus'] == 2:
-                    if not timeout:
-                        time.sleep(1)
-                    if  lock.acquire(False) == True:
+        #send request
+       
+        req = send_request(config['URL_server_recognise'],config['cameraId'],str(config['transType']),encoded_img, person.getIdRectangle(),config['TIMEOUT_request'])
+        #If server not responding
+        if not req == 404:
+            #parse responze to JSON
+            parsed_json = json.loads(req)
+            
+            #If the detected one person
+            if parsed_json['status'] == 2:
+                if not abs(parsed_json['msgStatus']) == 2 :
+                    person.setConfidence(int(parsed_json['faceConfidence']))
+                if not enrollRun:
+                    if parsed_json['msgStatus'] == 3:   #person was detected
+                        print Bcolors.OKGREEN + parsed_json["name" + str(parsed_json["userId"])] + Bcolors.ENDC 
+                        lock.acquire(True)
+                        person.personRecognised()
+                        detectedMess.append([parsed_json,datetime.datetime.now()])
                         #Lockable block
                         #set timeout (stop create new send thread)
                         timeout = True
-                        try:
-                            image = cv2.imencode('.jpg', frame)[1].tostring()
-                        except Exception,e:
-                            logger.error("UNKNOWN PERSON CODE IMAGE -> frame size: "+ str(len(frame))+" Problem with encoding image! "+str(type(e))+" | Error text: "+str(e))
-                        showNewPerson(image,'',None, logger)
+                        #show person and name in GUI
+                        showNewPerson(decode_B64(parsed_json),parsed_json["name" + str(parsed_json["userId"])],parsed_json["enabled" + str(parsed_json["userId"])], logger)
+                        logger.info("Detected person: "+parsed_json["name" + str(parsed_json["userId"])])     
+                        #voice_synthesizer(parsed_json)
+                        #timeout between detections
                         time.sleep(config['TIMEOUT_between_display'])
+                        #show defauld screen in GUI
                         showDefault()
+                        #deactivate timeout
                         timeout = False
                         lock.release()
 
-                elif parsed_json['msgStatus'] == -2:
-                    person.personRecognised()
-                    print Bcolors.BOLD + "Person Banned" + Bcolors.ENDC
-                    if not timeout:
-                        time.sleep(1)
-                    if lock.acquire(False) == True:
-                        bannedPerson = None
-                        for msg in detectedMess:
-                                if int(msg[0]['userId']) == parsed_json['lastRecognised']:
-                                    msg[1] =  datetime.datetime.now()
-                                    bannedPerson = msg
-                        if not bannedPerson == None:
+                    elif parsed_json['msgStatus'] == 2:
+                        if not timeout:
+                            time.sleep(1)
+                        if  lock.acquire(False) == True:
                             #Lockable block
+                            #set timeout (stop create new send thread)
                             timeout = True
-                            showNewPerson(decode_B64(bannedPerson[0]),bannedPerson[0]["name" + str(bannedPerson[0]["userId"])],
-                                bannedPerson[0]["enabled" + str(bannedPerson[0]["userId"])], logger)
-                            logger.info("Banned person detected: "+ bannedPerson[0]["name" + str(bannedPerson[0]["userId"])])     
-                            time.sleep(config['TIMEOUT_between_display'] - 0.5)
+                            try:
+                                image = cv2.imencode('.jpg', frame)[1].tostring()
+                            except Exception,e:
+                                logger.error("UNKNOWN PERSON CODE IMAGE -> frame size: "+ str(len(frame))+" Problem with encoding image! "+str(type(e))+" | Error text: "+str(e))
+                            showNewPerson(image,'',None, logger)
+                            time.sleep(config['TIMEOUT_between_display'])
                             showDefault()
                             timeout = False
-                        lock.release()
+                            lock.release()
 
-                elif parsed_json['msgStatus'] == 1:
-                    print Bcolors.WARNING + "Walk up and do not move" + Bcolors.ENDC
-                    print parsed_json['badDesc']
-                    if  lock.acquire(False) == True:
-                        showUp()
-                        lock.release()
-                elif parsed_json['msgStatus'] == 0:
-                    print Bcolors.UNDERLINE + "Face not detected " + Bcolors.ENDC
-                else:
-                    print Bcolors.WARNING + "Message rejected" + Bcolors.ENDC
-                    logger.warn("Server rejected a message.")
+                    elif parsed_json['msgStatus'] == -2:
+                        person.personRecognised()
+                        print Bcolors.BOLD + "Person Banned" + Bcolors.ENDC
+                        if not timeout:
+                            time.sleep(1)
+                        if lock.acquire(False) == True:
+                            bannedPerson = None
+                            for msg in detectedMess:
+                                    if int(msg[0]['userId']) == parsed_json['lastRecognised']:
+                                        msg[1] =  datetime.datetime.now()
+                                        bannedPerson = msg
+                            if not bannedPerson == None:
+                                #Lockable block
+                                timeout = True
+                                showNewPerson(decode_B64(bannedPerson[0]),bannedPerson[0]["name" + str(bannedPerson[0]["userId"])],
+                                    bannedPerson[0]["enabled" + str(bannedPerson[0]["userId"])], logger)
+                                logger.info("Banned person detected: "+ bannedPerson[0]["name" + str(bannedPerson[0]["userId"])])     
+                                time.sleep(config['TIMEOUT_between_display'] - 0.5)
+                                showDefault()
+                                timeout = False
+                            lock.release()
+
+                    elif parsed_json['msgStatus'] == 1:
+                        print Bcolors.WARNING + "Walk up and do not move" + Bcolors.ENDC
+                        print parsed_json['badDesc']
+                        if  lock.acquire(False) == True:
+                            showUp()
+                            lock.release()
+                    elif parsed_json['msgStatus'] == 0:
+                        print Bcolors.UNDERLINE + "Face not detected " + Bcolors.ENDC
+                    else:
+                        print Bcolors.WARNING + "Message rejected" + Bcolors.ENDC
+                        logger.warn("Server rejected a message.")
+    except Exception,e:
+        logger.error("FATAL ERROR !!! IN SENDING PART OF PROGRAM | Type: "+str(type(e))+" Description: "+str(e)+" msgStatus: "+parsed_json['msgStatus'])
+
 
             
 #Function to code frame to jpg and B64
